@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.claude/
+
+# made at runtime
+chats/
+agent_workspace/
+audit.log
+.DS_Store

@@ -1,0 +1,11 @@
+[project]
+name = "infinite-teammates"
+version = "0.1.0"
+description = "Building an agent from first principles, one level at a time"
+requires-python = ">=3.12"
+dependencies = [
+    "openai==3.2.0",
+]
+
+[tool.uv]
+package = false
