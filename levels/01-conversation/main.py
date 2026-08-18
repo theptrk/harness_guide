@@ -11,7 +11,7 @@ from openai import OpenAI
 
 import history
 
-MODEL = "gpt-5.6"
+MODEL = "gpt-5.6-luna"
 SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
 
 
@@ -31,12 +31,12 @@ def main() -> None:
     client = OpenAI()
 
     if "--new" in sys.argv:
-        chat = history.new_chat()
+        chat_file_path = history.new_chat()
     else:
-        chat = history.latest_chat() or history.new_chat()
+        chat_file_path = history.latest_chat() or history.new_chat()
 
-    already = history.messages(chat)
-    print(f"[{chat.name} · {len(already)} messages so far]")
+    messages = history.get_messages(chat_file_path)
+    print(f"[{chat_file_path.name} · {len(messages)} messages so far]")
     print("Ctrl-D to leave. Nothing is lost when you do.\n")
 
     while True:
@@ -50,26 +50,32 @@ def main() -> None:
 
         # Write it down first, then read the file back. Never keep the list in
         # a variable across turns — the file is the record, the list is derived.
-        history.append(chat, "user", said)
+        history.append(chat_file_path, "user", said)
+        messages = history.get_messages(chat_file_path)
 
         try:
             response = client.responses.create(
                 model=MODEL,
                 instructions=SYSTEM_PROMPT,
-                input=history.messages(chat),
+                input=messages,
                 reasoning={"effort": "none"},
             )
         except KeyboardInterrupt:
-            history.drop_last(chat)
+            history.drop_last(chat_file_path)
             print()
             break
         except Exception as e:
-            history.drop_last(chat)
+            history.drop_last(chat_file_path)
             print(f"call failed: {e}", file=sys.stderr)
             continue
 
         answer = response.output_text
-        history.append(chat, "assistant", answer, phase=last_message_phase(response))
+        history.append(
+            chat_file_path,
+            "assistant",
+            answer,
+            phase=last_message_phase(response),
+        )
 
         used = response.usage
         reasoning = used.output_tokens_details.reasoning_tokens

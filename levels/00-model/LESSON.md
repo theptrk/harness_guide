@@ -12,22 +12,25 @@ You need `uv` installed and a key in `.env` — that's the [Setup section of the
 
 ## Run it
 
-Start with `--raw`, which prints the whole response object before anything is pulled out of it:
+The call returns one object. Two ways to read it:
+
+- The JSON. What came over the wire. Every field in it is in the HTTP API. `--raw` prints this.
+- Helper properties the OpenAI Python SDK adds on the parsed object. They are not in the JSON. `response.output_text` is one.
+
+Start with `--raw`:
 
 ```sh
 uv run --env-file .env levels/00-model/main.py --raw "why is the sky blue"
 ```
 
-Specifically the code runs:
+That flag runs:
 
 ```python
 if raw:
     print(response.model_dump_json(indent=2))
 ```
 
-That JSON is what actually came back over the wire. Note the message lives in the first object inside the "output" list.
-
-Heres a truncated sample of the JSON:
+A truncated sample:
 
 ```json
 {
@@ -35,7 +38,7 @@ Heres a truncated sample of the JSON:
   "created_at": 1786995481.0,
   ... 
   "instructions": "You are a concise assistant. Answer in a few sentences.",
-  "model": "gpt-5.6-sol",
+  "model": "gpt-5.6-luna",
   "object": "response",
   "output": [
     {
@@ -72,53 +75,30 @@ Heres a truncated sample of the JSON:
 }
 ```
 
-Read it against the reference — [the Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create) `create` [docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create) — and find these three:
+Read it against the [Responses API `create` docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Find these in that JSON:
 
+| In the JSON | What it's for |
+| --- | --- |
+| `output[0].content[0].text` | the answer |
+| `usage.input_tokens`, `usage.output_tokens` | what you were billed for |
+| `usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Billed as output. Not in the text. |
+| `model` | which model served the request. Price this string. |
 
-| Path                                        | What it's for                                                    |
-| ------------------------------------------- | ---------------------------------------------------------------- |
-| `output[0].content[0].text`                 | the answer                                                       |
-| `usage.input_tokens`, `usage.output_tokens` | what you were billed for                                         |
-| `model`                                     | which model actually served it, not always the one you asked for |
+`reasoning_tokens` is inside `output_tokens`. The default is to think (`medium`). The sample shows `0` because `main.py` sets `reasoning={"effort": "none"}`. A later level that needs the thinking changes that one argument.
 
+`response.usage.input_tokens`, `response.usage.output_tokens_details.reasoning_tokens`, and `response.model` are JSON fields, accessed as attributes.
 
-```json
-{
-  ... 
-  "model": "gpt-5.6-sol",
-  "output": [
-    {
-      ... 
-      "content": [
-        {
-          ... 
-          "text": "The sky is blue because...",
-    }
-  ],
-  ...
-  "usage": {
-    "input_tokens": 27,
-  },
-}
-```
+`response.output_text` is a helper. Search the JSON for a top-level `output_text` — it isn't there. The SDK walks `output`, keeps message items, keeps blocks whose type is `output_text`, and joins the strings. That walk is `output[0].content[0].text` on the payload above.
 
-Those paths work in both places. The JSON above and the Python object are the same shape, field for field, so `response.usage.input_tokens` in the code is reading the field you just found in the payload. There is exactly one exception to that, and it's the answer itself.
-
-**The answer is four levels deep.** `output` is a list of items. The first item is a message, its `content` is a list of blocks, and the block with `"type": "output_text"` holds the text. If you called this API with `curl`, that path is what you would have to walk yourself.
-
-`main.py` doesn't walk it — it says `response.output_text`. **That is not a field in the response.** It's a convenience property that the Python library adds on top of the parsed object, and it exists only in that library: not in the JSON, not in the HTTP API, not necessarily in the SDK for another language. Search your raw output for a top-level `output_text` and you won't find one.
-
-It's worth reading, because it's short. In `openai-python` **v3.2.0** it's [a `for` loop in](https://github.com/openai/openai-python/blob/v3.2.0/src/openai/types/responses/response.py#L481-L493) `response.py` — over `output`, keeping message items, keeping their `output_text` blocks, joining the strings.
-
-Read it at the version you have rather than trusting the link, since this is library code and it can change under you:
+In `openai-python` **v3.2.0** it's [this loop in `response.py`](https://github.com/openai/openai-python/blob/v3.2.0/src/openai/types/responses/response.py#L481-L493). Read it at the version you have; library code moves:
 
 ```sh
 uv run python -c "import inspect; from openai.types.responses import Response; print(inspect.getsource(Response.output_text.fget))"
 ```
 
-Two things to take from it. It **concatenates** — several message items become one string. And it **filters** — anything that isn't a text block is skipped without a word. Today `output` holds exactly one message, so neither matters. From Level 2 it holds other kinds of item too, and `output_text` will quietly hand you the text while ignoring them.
+It concatenates, and it skips anything that isn't a text block. Today `output` holds one message, so neither matters. From Level 2 it holds other kinds of item too, and `output_text` will hand you the text while ignoring them.
 
-The `model` row matters more than it looks, too. The sample above asked for `gpt-5.6` and was served `gpt-5.6-sol` — so if you price the model you asked for, your cost line is wrong.
+The `model` row is the one you price. `main.py` asks for `gpt-5.6-luna` by name. `gpt-5.6` is an alias that currently points at Sol, which costs more. Aliases move. The code names the model you meant.
 
 `phase` on the message is `final_answer` here. Level 1 has to send that field back; ignoring it is a silent quality bug on this model family.
 
@@ -188,15 +168,15 @@ The core of the code is this call
 
 **Tokens are the unit of everything.** Not characters, not words. The response tells you how many went in and how many came out, and that number is what you're billed on and what fills up the context window later. Every cost and capacity problem in this course is a token problem.
 
-gpt-5.6 can spend output tokens thinking before it writes the answer. Those tokens are `usage.output_tokens_details.reasoning_tokens`. They are billed as output. They are not in the text you print. The default is to think (`medium`). This course sets `reasoning={"effort": "none"}` so the token line is about the answer you see. A later level that needs the thinking changes that one argument.
-
 ---
 
 
 
 ## Try these
 
-**Make the cost line true.** Look up the price for `gpt-5.6` at [https://platform.openai.com/docs/pricing](https://platform.openai.com/docs/pricing) and put the two numbers into `PRICE_IN` and `PRICE_OUT` at the top of `main.py`. They're per million tokens. Then run it again and see what a question actually costs you.
+**Make the cost line true.** Look up the price for `gpt-5.6-luna` at [https://platform.openai.com/docs/pricing](https://platform.openai.com/docs/pricing) and put the two numbers into `PRICE_IN` and `PRICE_OUT` at the top of `main.py`. They're per million tokens. Then run it again and see what a question actually costs you.
+
+**See what an alias does.** Set `MODEL` to `"gpt-5.6"`, run with `--raw`, and look at `model`. You should see `gpt-5.6-sol`. Then put it back.
 
 **Change the system prompt.** Set `SYSTEM_PROMPT` to `"Answer in exactly one word."` and ask the same question. Then try `"You are a pirate."` The system prompt is the largest single influence you have on behaviour, and it's one string.
 

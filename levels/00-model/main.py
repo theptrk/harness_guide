@@ -13,7 +13,7 @@ import sys
 
 from openai import OpenAI
 
-MODEL = "gpt-5.6"
+MODEL = "gpt-5.6-luna"
 
 # Price per million tokens. Look these up for MODEL and fill them in:
 # https://platform.openai.com/docs/pricing

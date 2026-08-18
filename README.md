@@ -10,6 +10,10 @@ The lessons are the guide. Start here:
 |---|---|---|
 | 0 | [Call a model](levels/00-model/LESSON.md) | one file, one dependency |
 | 1 | [Hold a conversation](levels/01-conversation/LESSON.md) | …because it forgot your name |
+| 2 | [Give it one tool](levels/02-tool/LESSON.md) | …because it has no clock |
+| 3 | [Build the agent loop](levels/03-loop/LESSON.md) | …because one tool call was not enough |
+| 4 | [Harden the loop](levels/04-harden/LESSON.md) | …because tools and model calls fail |
+| 5 | [Stream it](levels/05-stream/LESSON.md) | …because completed responses arrive too late |
 
 ## How to use this
 

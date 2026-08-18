@@ -36,9 +36,23 @@ you › What is my name?
     [41 in + 6 out]
 ```
 
-Look at the token counts. The second call sent 41 input tokens for a five-word question, because it sent the whole conversation again. It always will. That number only goes up, which is the entire subject of Level 10.
+Look at the token counts. The second call sent 41 input tokens for a five-word question, because it sent the whole conversation again. Each new message makes the conversation longer, so the next call sends more input tokens. Eventually the conversation becomes too large to send in full; Level 10 handles that by trimming the history.
 
-Press `Ctrl-D`, run the same command again, and ask again. It still knows.
+Press `Ctrl-D`, run the same command again, and ask again. On startup, the code finds the latest chat file and sends its messages with your new question. The model can answer because your program restored the conversation, not because the model remembered it.
+
+This is the path from the file to the request:
+
+```python
+chat_file_path = history.latest_chat() or history.new_chat()
+messages = history.get_messages(chat_file_path)
+
+response = client.responses.create(
+    # ...
+    input=messages,
+)
+```
+
+`latest_chat()` picks the newest conversation file. `get_messages()` reads that file and builds the list sent to the model.
 
 To start a clean one:
 
@@ -47,6 +61,8 @@ uv run --env-file .env levels/01-conversation/main.py --new
 ```
 
 ---
+
+
 
 ## What's in here
 
@@ -58,9 +74,13 @@ levels/01-conversation/
   chats/        made when you first run it, gitignored
 ```
 
-`main.py` grew a `while` loop. The interesting file is `history.py`, which is new.
+Files under `chats/` are named for when the conversation started: `YYYY-MM-DD-HHMMSS.jsonl`. This format makes filename order match start-time order.
+
+`main.py` now repeats the prompt and model call in a `while` loop. The new `history.py` module persists each message and rebuilds the input for the next call.
 
 ---
+
+
 
 ## The shape of it
 
@@ -75,40 +95,33 @@ cat levels/01-conversation/chats/*.jsonl
 {"role": "assistant", "content": "Hi Patrick, good to meet you.", "at": "...", "phase": "final_answer"}
 ```
 
-Then, when it's time to call the model, the list of messages is **built from that file**:
+`get_messages()` converts those lines into the list sent to the model. It leaves `at` on disk and preserves `phase` on assistant messages.
 
-```python
-input=history.messages(chat)
-```
-
-Not from a variable you've been carrying around. That's the whole design, and today it buys you nothing — an in-memory list would behave identically. Level 10 is where it pays: you start sending the model a shortened version of the conversation, and if the list *is* the conversation, shortening it destroys the only copy.
-
-Note what `messages()` does and doesn't do. It reads the file and returns a list. `at` stays on disk. `phase` is copied onto assistant messages when the file has it. At Level 10 this function will start from the newest summary and read forward instead. Nothing that calls it will change.
+The file is the record; the list is rebuilt from it for each call. During one run, an in-memory list would behave the same. It would disappear when the program exits, so it could not restore the conversation on restart. Later, `get_messages()` can return a trimmed history without deleting the full record.
 
 The user line is written before the call. If the call fails, or you hit Ctrl-C during it, `drop_last` takes that line back off — otherwise the next restart would send a question that never got an answer.
 
-`phase` is `final_answer` or `commentary`. The API uses it to mark the message as the answer versus a mid-turn remark. For this model family, follow-up calls are supposed to send it back on every assistant message. Dropping it can make later turns worse.
+`[phase](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter)` is `final_answer` or `commentary`. The API uses it to mark the message as the answer versus a mid-turn remark. For this model family, follow-up calls are supposed to send it back on every assistant message. Dropping it can make later turns worse.
 
 ---
 
-## Try these
+
+
+## [Optional] - Delete messages from history
 
 **Watch it rewind.** Delete the last two lines of a conversation and it forgets the last exchange, because the file is the only thing that remembers:
 
-```sh
-CHAT=$(ls -t levels/01-conversation/chats/*.jsonl | head -1)
-sed -i '' -e '$d' "$CHAT" && sed -i '' -e '$d' "$CHAT"
-```
-
-(Two passes on purpose — a single `sed -e '$d' -e '$d'` only deletes one line, since both commands run against the same last line.)
+1. The program prints the chat filename when it starts. Open that file under `levels/01-conversation/chats/`.
+2. Delete its last two lines: your last message and the assistant's reply.
+3. Save the file.
 
 Start the program again and the last thing you talked about never happened.
 
 **Prove the two conversations are separate.** Tell one your name, start a new one, and ask:
 
-```sh
-uv run --env-file .env levels/01-conversation/main.py --new
-```
+> ```sh
+> uv run --env-file .env levels/01-conversation/main.py --new
+> ```
 
 It doesn't know. The old file still does:
 
@@ -126,19 +139,15 @@ Every one of those lines was sent on the last call, and on every call before it.
 
 ---
 
-## Why bother with a boundary
 
-You could have one endless conversation. Don't. The next four levels are experiments — Level 4 asks you to break your own tools on purpose and watch it recover. Without `--new`, all of that wreckage rides along in the context of everything you do afterward, and you'll spend an evening debugging behaviour that's coming from a test you ran two levels ago.
 
----
+## Why start a new conversation?
 
-## What the API will offer you, and why we're not taking it
-
-The Responses API can hold the conversation server-side. You send a `previous_response_id` and it stitches the history together for you, and Level 1 becomes about four lines long.
-
-We're not using it. The point of this level is understanding what's being stitched. Once you've built it, using the built-in version later is a decision rather than a default — and by Level 10 you'll need the record to be yours anyway.
+By default, the program reopens the latest chat file and sends its messages on the next call. Use `--new` before testing unrelated behavior. Otherwise, old test instructions, tool calls, and errors remain in the input and can affect later responses. Starting a new conversation creates an empty chat file; it does not delete the old one.
 
 ---
+
+
 
 ## Done when
 
@@ -150,15 +159,22 @@ Three things are true:
 
 ---
 
+
+
 ## What breaks next
 
-Ask it something it can't know:
+Run Level 1 with a new conversation:
 
+```sh
+uv run --env-file .env levels/01-conversation/main.py --new
 ```
-you › What time is it in Tokyo?
-you › What's 47281 × 9912?
+
+Then ask for the current time:
+
+```text
+you › whats the time in tokyo
+
+››› Tokyo time is **Japan Standard Time (JST, UTC+9)**. I can’t access a live clock, but you can check your device’s world clock for the current exact time.
 ```
 
-Both answers arrive with total confidence. Both are wrong. It has no clock and it isn't doing arithmetic — it's producing text that looks like an answer.
-
-That's [Level 2](../02-tool/LESSON.md).
+The model identifies the missing capability: it has no live clock. [Level 2](../02-tool/LESSON.md) gives it one.

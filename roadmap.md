@@ -109,11 +109,11 @@ A prompt loop that writes down what happens as it happens: one line appended for
 
 ### 02 · Give it one tool
 
-**Breaks** — "What time is it in Tokyo?" → a confident, wrong answer. "What's 47281 × 9912?" → also confident, also wrong.
+**Breaks** — "What time is it in Tokyo?" → an answer that sounds current, from a model with no clock.
 
-One function — `get_current_time(tz)` — described to the model as a name, a sentence, and a list of arguments. A function offered to a model this way is called a *tool*, and the API parameter you send them in is called `tools`. Then the code to notice it asked for the tool, run it, and send the result back.
+One function — `get_current_time(tz)` — described to the model as a name, a sentence, and a list of arguments. A function offered to a model this way is called a *tool*, and the API parameter you send them in is called `tools`. Keep executable functions in a dictionary keyed by those names. Then the code can notice a tool request, select the function by name, run it, and send the result back.
 
-- **Learn** — How to describe a function so a model can ask for it. What its reply looks like when it wants that tool, and how you hand the result back. Why the sentence describing a tool matters more than its name.
+- **Learn** — How to describe a function so a model can ask for it. What its reply looks like when it wants that tool, how its name selects executable code, and how you hand the result back.
 - **Done when** — The model asks for the tool, your code runs the function behind it, and the answer is right because of that
 - **Effort** — an evening
 
@@ -122,12 +122,12 @@ One function — `get_current_time(tz)` — described to the model as a name, a 
 
 ### 03 · Build the agent loop
 
-**Breaks** — "What's today's date, and how many days until Christmas?" → your code runs one tool and stops, because you only wrote it to handle one.
+**Breaks** — "What time is it in Tokyo and New York?" → your code runs one tool request and stops, because you only wrote it to handle one.
 
-Wrap the whole thing in a `while`: call the model, run whatever tools it asks for, send the results back, and go round again until it stops asking and just answers. Keep the tools in a dictionary keyed by name, so adding one is an entry rather than another branch.
+Wrap the whole thing in a `while`: call the model, run whatever tools it asks for, send the results back, and go round again until it stops asking and just answers.
 
-- **Learn** — The loop itself, looking tools up by name, and when to stop going round. One pass is one model call plus whatever tools it asked for, and one request from you can take several passes.
-- **Done when** — It uses three or more tools in a row, choosing them itself, to finish one thing you asked for once
+- **Learn** — The loop itself and when to stop going round. One pass is one model call plus whatever tool it asked for, and one request from you can take several passes.
+- **Done when** — It calls the time tool for three timezones in a row, choosing the arguments itself, to finish one request
 - **Effort** — an evening
 
 > **Milestone** — That loop is what people mean by an agent, and it's about forty lines. Everything you add from here — files, a shell, a browser, your accounts — is another tool it can reach for. The loop itself barely changes again.
@@ -135,9 +135,9 @@ Wrap the whole thing in a `while`: call the model, run whatever tools it asks fo
 
 ### 04 · Harden the loop
 
-**Breaks** — It asks for a tool that doesn't exist. It passes `"3"` where you wanted a number. It calls the same one forty times. One of them raises an exception and the whole program dies halfway through a task. And the quiet one: a call comes back with no error at all and the answer just stops mid-sentence.
+**Breaks** — The tool schema and Python registry disagree. A string has the right JSON type but is not a valid timezone. The model keeps requesting tools. A function raises and leaves its `function_call` without an output. A model request succeeds but returns a partial message or tool call.
 
-Check the arguments before you run anything. Catch the exception and send the error text back to the model as the result, so it can read what went wrong and try something else. Cap the number of passes, time out slow tools, and retry the API itself when it fails.
+Check the response before executing it. Catch failures at the tool boundary and send structured error text back to the model, so it can read what went wrong and try something else. Cap executed tool calls. Configure the API client's timeout and retries. Put a timeout inside each future tool that performs blocking I/O; the clock tool does not.
 
 Then handle the truncated response, which looks like success. `status` is `incomplete` and `incomplete_details.reason` is one of exactly two things: `max_output_tokens`, meaning it hit a cap, or `content_filter`, meaning retrying is pointless. Re-sending the identical request is always wrong — same input, same cap, same result, twice the cost. Either raise the cap, or hand back the partial answer and ask it to carry on.
 
@@ -148,12 +148,12 @@ Then handle the truncated response, which looks like success. `status` is `incom
 
 ### 05 · Stream it
 
-**Breaks** — You give it a task that takes twenty passes and stare at a blank terminal for ninety seconds, unsure whether it's working, stuck, or looping through your money.
+**Breaks** — Each model call leaves the terminal unchanged until its complete response arrives. If you interrupt a streamed response, partial text is visible but is not a valid message to send back to the API.
 
-Take the answer a piece at a time as it's written instead of waiting for all of it. Then build a live view by watching the Level 1 file grow. That means writing down things the file doesn't record yet: the tool being called, the result coming back, and later the line saying it's stuck and needs you.
+Print text deltas as the API emits them. Record those deltas for display, then record the completed API item separately for conversation input. Give every event a turn ID and replay API items only after that turn completes. A second process can follow the JSONL file and render the same progress without calling the model or running a tool.
 
-- **Learn** — Reading a response in pieces as it arrives. Showing work in progress without keeping a second copy of what happened. Deciding what has to be written down for someone to reconstruct the screen from the file alone.
-- **Done when** — You can watch it work, see each tool call land, interrupt it — and afterward replay the whole conversation from its file alone
+- **Learn** — Reading typed stream events. Separating display events from canonical API items. Keeping interrupted turns in the record without including them in later model input.
+- **Done when** — You can watch text arrive, follow the record from another process, interrupt a turn, and afterward replay what happened from the file alone.
 - **Effort** — an evening
 
 > **Why here** — The lines you add now are what the takeover screen reads at Level 9. Change the format after that and you're changing the screen, the replay, and every line already written to the file.
@@ -248,13 +248,15 @@ You wrote code at Level 1 that reads the current conversation's file and builds 
 
 **Breaks** — You rewrite the system prompt to fix how it reads a page, and the Railway task passes. One run can't tell you whether your change did that or whether you got lucky. And either way it says nothing about everything else that prompt affects.
 
+You switch `MODEL` to `gpt-5.6-sol` because the end of the course wants a capable agent. That is not a reason that applies to the tasks you have. Cost goes up. You cannot tell if pass rate moved. You switch to `gpt-5.6-luna` because Sol felt expensive. That is the same decision with the sign flipped.
+
 Twenty to thirty fixed tasks whose outcome a program can check, a runner that puts all of them through one version of your code, and a report: how many passed, what it cost on average, how many passes it took, and how all of that compares to last time.
 
-- **Learn** — Building a test set for something that gives a different answer every run. When a program can check the answer, and when you have to ask a second model to judge it. Catching the thing your prompt change quietly broke somewhere else. Treating cost and number of passes as results, not footnotes.
+- **Learn** — Building a test set for something that gives a different answer every run. When a program can check the answer, and when you have to ask a second model to judge it. Catching the thing a prompt or model change quietly broke somewhere else. Treating cost and number of passes as results, not footnotes.
 - **Done when** — After changing something you can state what it did to the pass rate and what it did to the cost, and defend both numbers
 - **Effort** — a few evenings
 
-> **Note** — Until now a change either felt better or it didn't. From here you run the same twenty tasks before and after and compare the numbers.
+> **Note** — Until now a change either felt better or it didn't. From here you run the same twenty tasks before and after and compare the numbers. Luna vs Terra vs Sol is one of those runs.
 
 
 ---
@@ -387,7 +389,7 @@ No wrapper that lets you swap providers. A wrapper at Level 0 would hide the exa
 
 ### How long any of this takes
 
-The effort figures are guesses. Levels 0 and 1 are built; the rest would change with whoever is building them — so they're worth reading as relative weight only: Level 9 is a much bigger piece of work than Level 2. Replace each one with the real figure as the level gets built.
+The effort figures are guesses. Levels 0 through 5 are built; the rest would change with whoever is building them — so they're worth reading as relative weight only: Level 9 is a much bigger piece of work than Level 2. Replace each one with the real figure as the level gets built.
 
 ### Audience
 
@@ -404,4 +406,4 @@ Levels 0 to 14 stand on their own and finish with the Railway task working. The 
 
 ---
 
-*Draft v0.2 · Levels 0–1 built · Effort figures are guesses until a level has been built*
+*Draft v0.2 · Levels 0–5 built · Effort figures are guesses until a level has been built*

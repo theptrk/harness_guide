@@ -51,7 +51,7 @@ def drop_last(path: Path) -> None:
     path.write_text("".join(lines[:-1]))
 
 
-def messages(path: Path) -> list[dict]:
+def get_messages(path: Path) -> list[dict]:
     """Build the list to send to the model, out of the file.
 
     Right now this is every line in order. At Level 10 it stops being that:
