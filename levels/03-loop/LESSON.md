@@ -5,7 +5,7 @@
 Level 2 handles one tool request. Asking for two timezones produced:
 
 ```text
-you › What time is it in Tokyo and New York?
+you › Use get_current_time once for each city. What time is it in Tokyo and New York?
 
 tool › get_current_time({"timezone":"Asia/Tokyo"})
 tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T08:33:07+09:00"}
@@ -36,7 +36,7 @@ uv run --env-file .env levels/03-loop/main.py --new
 Ask for three current times:
 
 ```text
-you › What time is it in Tokyo, New York, and London?
+you › Use get_current_time once for each city. What time is it in Tokyo, New York, and London?
 ```
 
 This run produced:
@@ -61,50 +61,53 @@ Three model calls request tools. The fourth returns the answer.
 
 ---
 
-## Two loops
+## One CLI loop, one agent loop
 
-`main.py` now contains two `while True` loops with different stop conditions.
+The two loops have different owners and stop conditions.
 
-The outer loop belongs to the conversation. It waits for another user message and stops at `Ctrl-D`:
+`main()` owns the CLI session loop. It waits for terminal input and stops at `Ctrl-D`:
 
 ```python
 while True:
     said = input("you › ").strip()
-    # ...
+    run_turn(client, chat_file_path, said)
 ```
 
-The inner loop belongs to one user request. It stops when the model returns no `function_call`:
+The conversation does not depend on this loop. Its JSONL file remains after the process exits.
+
+`run_turn()` owns one user request. It appends that request, then its agent loop continues until the model returns no `function_call`:
 
 ```python
-while True:
-    input_items = history.get_input_items(chat_file_path)
-    response = client.responses.create(
-        model=MODEL,
-        instructions=SYSTEM_PROMPT,
-        input=input_items,
-        tools=TOOLS,
-        parallel_tool_calls=False,
-        reasoning={"effort": "none"},
+def run_turn(client, chat_file_path, said):
+    history.append_item(
+        chat_file_path,
+        {"role": "user", "content": said},
     )
 
-    for output_item in response.output:
-        history.append_item(
-            chat_file_path,
-            output_item.model_dump(mode="json", exclude_none=True),
+    while True:
+        input_items = history.get_input_items(chat_file_path)
+        response = client.responses.create(
+            # ...
+            input=input_items,
+            tools=TOOLS,
         )
 
-    tool_call = next(
-        (item for item in response.output if item.type == "function_call"),
-        None,
-    )
-    if tool_call is None:
-        answer = response.output_text
-        break
+        # Persist response.output.
 
-    # Run the requested tool and append its result.
+        tool_call = next(
+            (item for item in response.output if item.type == "function_call"),
+            None,
+        )
+        if tool_call is None:
+            answer = response.output_text
+            break
+
+        # Run the requested tool and append its result.
 ```
 
-The inner loop does not decide in advance how many tool calls the request needs. Each model response decides whether there is another pass. The tool registry and name lookup are unchanged from Level 2; the loop is the new mechanism.
+The agent loop does not decide in advance how many tool calls the request needs. Each model response decides whether there is another pass. The tool registry and name lookup are unchanged from Level 2; the loop is the new mechanism.
+
+`run_turn()` names the boundary; it does not make the code interface-independent. It still prints tool activity and the answer. A later interface can expose that coupling as a concrete problem.
 
 ---
 
@@ -129,16 +132,23 @@ The next pass starts by calling `get_input_items()` again. The model receives th
 
 ## Done when
 
-Ask for the current time in three timezones once. The program should:
+1. Start a new conversation:
 
-1. Execute `get_current_time` three times with three model-selected timezone arguments.
-2. Make one final model call after the third result.
-3. Return one answer containing all three times.
+   ```sh
+   uv run --env-file .env levels/03-loop/main.py --new
+   ```
+
+2. Enter `Use get_current_time once for each city. What time is it in Tokyo, New York, and London?`
+3. Confirm that the terminal shows:
+   - Three `tool › get_current_time` lines, one for each city.
+   - Three matching `tool ‹` timestamps.
+   - One final answer containing all three cities.
+   - A usage line reporting `4 model call(s)`.
 
 ---
 
 ## What breaks next
 
-The loop assumes every requested tool exists, every argument is valid, every function succeeds, and the model eventually stops requesting tools. None of those assumptions is enforced.
+The loop assumes every response is complete, every requested tool exists, every argument is valid, every function succeeds, and the model eventually stops requesting tools. None of those assumptions is enforced.
 
 [Level 4](../04-harden/LESSON.md) handles those failures.

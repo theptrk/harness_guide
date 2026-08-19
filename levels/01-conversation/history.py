@@ -19,9 +19,9 @@ CHATS = Path(__file__).parent / "chats"
 def new_chat() -> Path:
     """Start a conversation. Named for when it started, so `ls` sorts right."""
     CHATS.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")
     path = CHATS / f"{stamp}.jsonl"
-    path.touch()
+    path.touch(exist_ok=False)
     return path
 
 

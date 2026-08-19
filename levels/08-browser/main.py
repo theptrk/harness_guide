@@ -1,7 +1,7 @@
-"""Level 5 — stream model text and exclude unfinished turns.
+"""Level 8 — use one persistent browser page.
 
-    uv run --env-file .env levels/05-stream/main.py
-    uv run --env-file .env levels/05-stream/main.py --new
+    uv run --env-file .env levels/08-browser/main.py
+    uv run --env-file .env levels/08-browser/main.py --new
 """
 
 import json
@@ -13,33 +13,47 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
 
+import browser_tools
+import file_tools
 import history
+import shell_tools
 
 MODEL = "gpt-5.6-luna"
-SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
+SYSTEM_PROMPT = (
+    "You are a concise coding assistant. Use the tools to inspect and modify files, "
+    "run commands, and operate one persistent browser page. Every shell command "
+    "requires approval. A denied command is a final decision: do not request the "
+    "same denied action again unless the person explicitly asks. Do not claim an "
+    "action succeeded unless its tool result says it did."
+)
 TOOL_CALL_LIMIT = 5
 API_RETRIES = 2
 API_TIMEOUT_SECONDS = 30.0
 
-TOOLS = [
-    {
-        "type": "function",
-        "name": "get_current_time",
-        "description": "Get the current date and time in a specific timezone.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timezone": {
-                    "type": "string",
-                    "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
-                }
-            },
-            "required": ["timezone"],
-            "additionalProperties": False,
+TIME_TOOL = {
+    "type": "function",
+    "name": "get_current_time",
+    "description": "Get the current date and time in a specific timezone.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "timezone": {
+                "type": "string",
+                "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
+            }
         },
-        "strict": True,
-    }
-]
+        "required": ["timezone"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+TOOLS = (
+    [TIME_TOOL]
+    + file_tools.TOOLS
+    + [shell_tools.RUN_COMMAND_TOOL]
+    + browser_tools.TOOLS
+)
 
 
 class HarnessError(RuntimeError):
@@ -59,6 +73,14 @@ def get_current_time(timezone: str) -> str:
 
 TOOL_FUNCTIONS = {
     "get_current_time": get_current_time,
+    "list_files": file_tools.list_files,
+    "read_file": file_tools.read_file,
+    "write_file": file_tools.write_file,
+    "edit_file": file_tools.edit_file,
+    "run_command": shell_tools.run_command,
+    "open_page": browser_tools.open_page,
+    "read_page": browser_tools.read_page,
+    "click": browser_tools.click,
 }
 
 
@@ -72,6 +94,15 @@ def tool_error(error_type: str, message: str) -> str:
             }
         }
     )
+
+
+def display_tool_result(tool_result: str) -> str:
+    """Format JSON for the terminal without changing the stored tool result."""
+    try:
+        value = json.loads(tool_result)
+    except json.JSONDecodeError:
+        return tool_result
+    return json.dumps(value, indent=2)
 
 
 def run_tool(tool_call) -> str:
@@ -195,7 +226,7 @@ def stream_response(
                 "response.refusal.delta",
             }:
                 if not text_started:
-                    print("\nmodel › ", end="", flush=True)
+                    print("\n🤖 model › ", end="", flush=True)
                 print(event.delta, end="", flush=True)
                 text_started = True
             elif event.type in {
@@ -256,7 +287,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
             if tool_call is None:
                 answer = response_text(response)
                 if not text_was_streamed:
-                    print(f"\nmodel › {answer}")
+                    print(f"\n🤖 model › {answer}")
                 break
             if force_answer:
                 raise HarnessError("model requested a tool after tool use was disabled")
@@ -281,7 +312,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
                     "output": tool_result,
                 },
             )
-            print(f"tool ‹ {tool_result}")
+            print(f"tool ‹ {display_tool_result(tool_result)}")
     except KeyboardInterrupt:
         history.append_event(chat_file_path, turn_id, "turn_interrupted")
         print("\n[turn interrupted]")
@@ -338,24 +369,28 @@ def main() -> None:
 
     input_items = history.get_input_items(chat_file_path)
     print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
+    print("[workspace: levels/08-browser/agent_workspace]")
     print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
-    while True:
-        try:
-            said = input("you › ").strip()
-        except EOFError:
-            print()
-            break
-        except KeyboardInterrupt:
-            print()
-            break
-        if not said:
-            continue
+    try:
+        while True:
+            try:
+                said = input("📝 you › ").strip()
+            except EOFError:
+                print()
+                break
+            except KeyboardInterrupt:
+                print()
+                break
+            if not said:
+                continue
 
-        try:
-            run_turn(client, chat_file_path, said, max_output_tokens)
-        except KeyboardInterrupt:
-            break
+            try:
+                run_turn(client, chat_file_path, said, max_output_tokens)
+            except KeyboardInterrupt:
+                break
+    finally:
+        browser_tools.close_browser()
 
 
 if __name__ == "__main__":

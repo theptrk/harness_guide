@@ -1,7 +1,7 @@
-"""Level 5 — stream model text and exclude unfinished turns.
+"""Level 6 — give the agent confined file tools.
 
-    uv run --env-file .env levels/05-stream/main.py
-    uv run --env-file .env levels/05-stream/main.py --new
+    uv run --env-file .env levels/06-files/main.py
+    uv run --env-file .env levels/06-files/main.py --new
 """
 
 import json
@@ -13,33 +13,37 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
 
+import file_tools
 import history
 
 MODEL = "gpt-5.6-luna"
-SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
+SYSTEM_PROMPT = (
+    "You are a concise coding assistant. Use the file tools to inspect and modify "
+    "files in your workspace. Do not claim a file changed unless a tool succeeded."
+)
 TOOL_CALL_LIMIT = 5
 API_RETRIES = 2
 API_TIMEOUT_SECONDS = 30.0
 
-TOOLS = [
-    {
-        "type": "function",
-        "name": "get_current_time",
-        "description": "Get the current date and time in a specific timezone.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timezone": {
-                    "type": "string",
-                    "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
-                }
-            },
-            "required": ["timezone"],
-            "additionalProperties": False,
+TIME_TOOL = {
+    "type": "function",
+    "name": "get_current_time",
+    "description": "Get the current date and time in a specific timezone.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "timezone": {
+                "type": "string",
+                "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
+            }
         },
-        "strict": True,
-    }
-]
+        "required": ["timezone"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+TOOLS = [TIME_TOOL] + file_tools.TOOLS
 
 
 class HarnessError(RuntimeError):
@@ -59,6 +63,10 @@ def get_current_time(timezone: str) -> str:
 
 TOOL_FUNCTIONS = {
     "get_current_time": get_current_time,
+    "list_files": file_tools.list_files,
+    "read_file": file_tools.read_file,
+    "write_file": file_tools.write_file,
+    "edit_file": file_tools.edit_file,
 }
 
 
@@ -338,6 +346,7 @@ def main() -> None:
 
     input_items = history.get_input_items(chat_file_path)
     print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
+    print("[workspace: levels/06-files/agent_workspace]")
     print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
     while True:

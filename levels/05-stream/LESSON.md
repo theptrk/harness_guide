@@ -2,47 +2,51 @@
 
 ## What broke
 
-Level 4 waits for each model response to finish before it prints anything from that response. A slow model call leaves the terminal unchanged until the full message or function call arrives.
+Level 4 prints nothing from a model call until the complete response arrives. Ask for several paragraphs and the terminal stays unchanged while the model generates all of them.
 
-Level 5 requests a stream. Text arrives in small deltas and is printed immediately:
+Level 5 prints each text fragment as the API sends it. After the stream ends, it stores the complete response item for the next model call.
 
-```text
-[model call 2 started]
+Level 4 can exclude an incomplete output item, but it cannot exclude every API item from that failed request. Level 5 gives each request a `turn_id` and includes its API items in later model input only after the turn completes.
 
-model › It’s 4:57 PM on August 18, 2026 in Tokyo.
-```
-
-The completed line looks ordinary. While it is generated, its fragments appear one at a time.
+The CLI loop in `main()` still reads one terminal message and passes it to `run_turn()`. This level changes how `run_turn()` receives and records the model response.
 
 ---
 
 ## Run it
 
+Start the agent:
+
 ```sh
 uv run --env-file .env levels/05-stream/main.py --new
 ```
 
-Ask:
+It prints the new chat filename and waits:
 
 ```text
-you › What time is it in Tokyo?
+[2026-08-18-122432-278577.jsonl · 0 input items so far]
 ```
 
-One run produced:
+Ask for enough text to see it arrive:
+
+```text
+you › Explain in six short bullet points how UTC offsets work.
+```
+
+One run returned:
 
 ```text
 [model call 1 started]
 
-tool › get_current_time({"timezone":"Asia/Tokyo"})
-tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T16:57:17+09:00"}
-
-[model call 2 started]
-
-model › It’s 4:57 PM on August 18, 2026 in Tokyo.
-    [2 model call(s) · 1 tool call(s) · 400 in + 45 out]
+model › - UTC is the global reference time, with an offset of **+00:00**.
+- An offset tells you how far local time differs from UTC.
+- Positive offsets are ahead of UTC, such as **UTC+02:00**.
+- Negative offsets are behind UTC, such as **UTC−05:00**.
+- Add the offset to UTC to calculate local time.
+- Offsets may change because of daylight saving time or regional rules.
+    [1 model call(s) · 0 tool call(s) · 172 in + 96 out]
 ```
 
-The first response contains a function call, so it has no answer text to stream. The second response emits the final answer as text deltas.
+This transcript cannot show timing. During the run, the terminal displays each fragment before the complete response exists.
 
 ---
 
@@ -60,14 +64,14 @@ A text event contains a fragment at `event.delta`:
 
 ```python
 event.type == "response.output_text.delta"
-event.delta == "It"
+event.delta == "-"
 ```
 
 A final stream event contains the complete response at `event.response`:
 
 ```python
 event.type == "response.completed"
-response = event.response
+final_response = event.response
 ```
 
 This level handles these values of `event.type`:
@@ -77,9 +81,11 @@ This level handles these values of `event.type`:
 - `response.completed` — the final event containing the completed `Response` at `event.response`.
 - `response.incomplete` and `response.failed` — final events containing non-completed responses at `event.response`.
 
-A delta is a string fragment, not necessarily one token. This run wrote `"It"`, `"’s"`, `" **"`, and `"4"` as four separate events.
+The API emits other event types too, including function-call argument deltas. This program does not display those arguments incrementally. It waits for the final event and reads the complete function call from `event.response.output`.
 
-The loop branches on `event.type`. It records and prints each delta, or saves the complete response from the final event:
+A text delta is a string fragment, not necessarily one token. The run above wrote `"-"`, `" UTC"`, `" is"`, and `" the"` as four separate events.
+
+The loop branches on `event.type`. It prints each text delta and keeps the complete response from the final event:
 
 ```python
 with client.responses.create(
@@ -91,54 +97,26 @@ with client.responses.create(
             "response.output_text.delta",
             "response.refusal.delta",
         }:
-            history.append_event(
-                chat_file_path,
-                turn_id,
-                "text_delta",
-                model_call=model_call,
-                delta=event.delta,
-                start=not text_started,
-            )
             print(event.delta, end="", flush=True)
         elif event.type in {
             "response.completed",
             "response.incomplete",
             "response.failed",
         }:
-            response = event.response
+            final_response = event.response
 ```
 
 `flush=True` makes the fragment visible immediately instead of waiting for Python's output buffer.
 
+If a completed response contains answer text but the stream emitted no text deltas, `run_turn()` prints the complete answer after the stream closes.
+
 ---
 
-## The JSONL file stores display events and API items
+## Deltas are display, not conversation input
 
-Every event is appended to the current chat file in `levels/05-stream/chats/`. For assistant text, that file stores the same text in two forms.
+Text deltas are fragments of one response. They are printed and discarded. Appending each fragment as an assistant message would give the next model call a conversation that never existed.
 
-For a completed turn, `history.get_input_items()` applies this filter:
-
-```text
-JSONL file:
-- text_delta        → not sent to the model
-- model_started     → not sent to the model
-- turn_completed    → not sent to the model
-- api_item          → sent to the model
-```
-
-An `api_item` is sent only when `include_in_input` is `true` and its turn completed. The other entries exist for display and recovery.
-
-While text is streaming, each fragment is stored as a `text_delta` display event. These are the relevant fields from one line:
-
-```json
-{
-  "kind": "text_delta",
-  "delta": " Tokyo",
-  "start": false
-}
-```
-
-After the final stream event arrives, the complete message is stored in the same file as one `api_item`. These are the relevant fields from that line:
+The terminal stream event contains the complete `Response`. After the stream closes, `save_response()` stores each complete output item as one `api_item`:
 
 ```json
 {
@@ -149,28 +127,29 @@ After the final stream event arrives, the complete message is stored in the same
     "content": [
       {
         "type": "output_text",
-        "text": "It’s 4:57 PM on August 18, 2026 in Tokyo."
+        "text": "- UTC is the global reference time..."
       }
     ]
-  },
-  "include_in_input": true
+  }
 }
 ```
 
-The answer text is duplicated deliberately:
+The next model call receives that complete item, not the fragments that appeared in the terminal. `history.get_input_items()` removes the event wrapper only after checking the event type and turn:
 
-- `view.py` reads the `text_delta` events to reconstruct the displayed progress. It ignores the completed assistant `api_item`.
-- `history.get_input_items()` reads the completed `api_item` to build the next model request. It ignores every `text_delta`.
-
-Only the completed `api_item` is sent to the model. Reconstructing that item from deltas would lose fields supplied by the API, including the message ID, status, and phase.
-
-Function calls and function outputs have no displayed text deltas in this program. They are stored once as API items, and `view.py` renders those items directly.
+```python
+if event["kind"] != "api_item":
+    continue
+if event["turn_id"] in completed_turns or event["turn_id"] == active_turn_id:
+    items.append(event["item"])
+```
 
 ---
 
-## A turn is replayable only after it completes
+## Only completed turns become later API input
 
-Every user request gets a local `turn_id`. All API items, deltas, and status events produced for that request carry the same ID.
+Every user request gets a local `turn_id`. All API items and status events produced for that request carry the same ID.
+
+Level 4 excluded incomplete model output, but earlier API items from the same failed request could still enter later model input. Level 5 uses the turn ID to include or exclude the entire request.
 
 The last event of a successful turn is:
 
@@ -178,58 +157,34 @@ The last event of a successful turn is:
 {
   "kind": "turn_completed",
   "turn_id": "...",
-  "model_calls": 2,
-  "tool_calls": 1,
-  "input_tokens": 400,
-  "output_tokens": 45
+  "model_calls": 1,
+  "tool_calls": 0,
+  "input_tokens": 172,
+  "output_tokens": 96
 }
 ```
 
 `get_input_items()` includes API items from completed turns. It also accepts the active turn's ID while the agent loop is running, because each tool result must be available to the next model call before the turn is finished.
 
-If the process is interrupted or fails, there is no `turn_completed` event. Its partial deltas remain available for inspection, but none of that turn's API items are sent on the next run.
+If the process is interrupted or fails, there is no `turn_completed` event. None of that turn's API items are sent on the next run.
+
+If interruption happens before a terminal response event, the log contains `model_started` but no `model_call_finished`. A later `turn_interrupted` event marks the turn as interrupted.
 
 This also handles a process that stops before it can append `turn_interrupted`: the missing completion event is enough to exclude the turn.
 
----
-
-## Watch and replay the chat file
-
-`main.py` prints the chat filename when it starts:
+To see that behavior, ask for a response long enough to interrupt:
 
 ```text
-[2026-08-18-005715.jsonl · 0 replayable items so far]
+you › Write the numbers 1 through 200, one per line.
 ```
 
-In another terminal, use that name with `view.py`:
-
-```sh
-uv run levels/05-stream/view.py --follow \
-  levels/05-stream/chats/2026-08-18-005715.jsonl
-```
-
-`--follow` reads existing events, waits for appended lines, and renders each new event. Enter a request in the first terminal. The second terminal should show the same user message, model-call status, tool calls, text, and usage totals.
-
-After the run, omit `--follow` to replay the existing chat file and exit:
-
-```sh
-uv run levels/05-stream/view.py \
-  levels/05-stream/chats/2026-08-18-005715.jsonl
-```
-
-The viewer does not call the model or execute tools. Its only input is the JSONL file.
-
----
-
-## Interrupt a turn
-
-Press `Ctrl-C` while a model response is streaming. The harness appends:
+Press `Ctrl-C` after some numbers appear. The harness appends:
 
 ```json
 {"kind": "turn_interrupted", "turn_id": "..."}
 ```
 
-Any deltas received before the interruption remain in the file. `view.py` replays them followed by `[turn interrupted]`. Restarting `main.py` excludes every API item from that unfinished turn.
+The fragments printed before the interruption remain only in that terminal. Restarting `main.py` excludes every API item from the unfinished turn.
 
 The SDK can retry some failures before a stream begins. Once output has arrived, this harness does not repeat the model call: doing so could duplicate visible text or tool work.
 
@@ -237,15 +192,48 @@ The SDK can retry some failures before a stream begins. Once output has arrived,
 
 ## Done when
 
-1. Watch answer text appear before the response is complete.
-2. Follow the chat file from a second terminal and see the same progress.
-3. Replay the file after the process exits without calling the API.
-4. Interrupt an active response, then restart and confirm that the interrupted turn is not counted as replayable input.
+1. Start a new conversation:
+
+   ```sh
+   uv run --env-file .env levels/05-stream/main.py --new
+   ```
+
+2. Enter `Explain in six short bullet points how UTC offsets work.`
+3. Confirm that answer text appears before the usage line.
+4. Press `Ctrl-D`, then start another new conversation:
+
+   ```sh
+   uv run --env-file .env levels/05-stream/main.py --new
+   ```
+
+5. Enter `Write the numbers 1 through 200, one per line.` Press `Ctrl-C` after several numbers appear.
+6. Restart without `--new`:
+
+   ```sh
+   uv run --env-file .env levels/05-stream/main.py
+   ```
+
+7. Confirm that the startup header reports `0 input items so far`. None of the interrupted turn is included in later model input.
 
 ---
 
 ## What breaks next
 
-The agent can report its progress, but it still cannot read or change a file.
+Ask it to create a file:
 
-[Level 6](../06-files/LESSON.md) adds file tools confined to an agent workspace.
+````text
+you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
+
+model › I can’t create files directly here, but `profile.md` should contain:
+
+```markdown
+# Profile
+
+- Name: Patrick
+- Favorite fruit: Strawberries
+```
+````
+
+That is the complete response from one run. No `profile.md` file was created. You still have to copy the text into an editor.
+
+[Level 6](../06-files/LESSON.md) adds confined file tools.

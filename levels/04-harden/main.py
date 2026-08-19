@@ -101,17 +101,24 @@ def configured_output_limit() -> int | None:
 
 def save_response(chat_file_path, response) -> None:
     """Save output, but exclude incomplete output from the next API input."""
-    include_in_input = response.status == "completed"
+    append_item = (
+        history.append_api_item
+        if response.status == "completed"
+        else history.append_incomplete_item
+    )
     for output_item in response.output:
-        history.append_item(
+        append_item(
             chat_file_path,
             output_item.model_dump(mode="json", exclude_none=True),
-            include_in_input=include_in_input,
         )
+    outcome = {"status": response.status}
+    if response.incomplete_details is not None:
+        outcome["incomplete_reason"] = response.incomplete_details.reason
+    history.append_event(chat_file_path, "model_call_finished", **outcome)
 
 
 def require_complete(response) -> None:
-    """Reject output that is unsafe to execute or replay."""
+    """Reject output that is unsafe to execute or include in later model input."""
     if response.status == "completed":
         return
     if response.status == "incomplete":
@@ -137,6 +144,92 @@ def response_text(response) -> str:
     raise HarnessError("completed model response contained no answer")
 
 
+def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -> None:
+    """Run one user request until the model returns an answer."""
+    history.append_api_item(
+        chat_file_path,
+        {"role": "user", "content": said},
+    )
+    only_user_item_written = True
+    model_calls = 0
+    tool_calls = 0
+    input_tokens = 0
+    output_tokens = 0
+    force_answer = False
+
+    try:
+        while True:
+            input_items = history.get_input_items(chat_file_path)
+            request_options = {}
+            if max_output_tokens is not None:
+                request_options["max_output_tokens"] = max_output_tokens
+
+            response = client.responses.create(
+                model=MODEL,
+                instructions=SYSTEM_PROMPT,
+                input=input_items,
+                tools=TOOLS,
+                tool_choice="none" if force_answer else "auto",
+                parallel_tool_calls=False,
+                reasoning={"effort": "none"},
+                **request_options,
+            )
+            save_response(chat_file_path, response)
+            only_user_item_written = False
+            model_calls += 1
+            if response.usage is not None:
+                input_tokens += response.usage.input_tokens
+                output_tokens += response.usage.output_tokens
+            require_complete(response)
+
+            tool_call = next(
+                (item for item in response.output if item.type == "function_call"),
+                None,
+            )
+            if tool_call is None:
+                answer = response_text(response)
+                break
+            if force_answer:
+                raise HarnessError("model requested a tool after tool use was disabled")
+
+            print(f"\ntool › {tool_call.name}({tool_call.arguments})")
+            if tool_calls >= TOOL_CALL_LIMIT:
+                tool_result = tool_error(
+                    "ToolCallLimit",
+                    f"the limit of {TOOL_CALL_LIMIT} tool calls has been reached",
+                )
+                force_answer = True
+            else:
+                tool_result = run_tool(tool_call)
+                tool_calls += 1
+            print(f"tool ‹ {tool_result}")
+
+            history.append_api_item(
+                chat_file_path,
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": tool_result,
+                },
+            )
+    except KeyboardInterrupt:
+        if only_user_item_written:
+            history.drop_last_item(chat_file_path)
+        raise
+    except OpenAIError as error:
+        if only_user_item_written:
+            history.drop_last_item(chat_file_path)
+        sys.exit(f"API failed after retries: {error}")
+    except HarnessError as error:
+        sys.exit(f"harness failed: {error}")
+
+    print(f"\n››› {answer}")
+    print(
+        f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
+        f" · {input_tokens} in + {output_tokens} out]\n"
+    )
+
+
 def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
@@ -154,100 +247,23 @@ def main() -> None:
         chat_file_path = history.latest_chat() or history.new_chat()
 
     input_items = history.get_input_items(chat_file_path)
-    print(f"[{chat_file_path.name} · {len(input_items)} replayable items so far]")
+    print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
     print("Ctrl-D to leave. Every API item is saved.\n")
 
     while True:
         try:
             said = input("you › ").strip()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             print()
             break
         if not said:
             continue
 
-        history.append_item(
-            chat_file_path,
-            {"role": "user", "content": said},
-        )
-        only_user_item_written = True
-        model_calls = 0
-        tool_calls = 0
-        input_tokens = 0
-        output_tokens = 0
-        force_answer = False
-
         try:
-            while True:
-                input_items = history.get_input_items(chat_file_path)
-                request_options = {}
-                if max_output_tokens is not None:
-                    request_options["max_output_tokens"] = max_output_tokens
-
-                response = client.responses.create(
-                    model=MODEL,
-                    instructions=SYSTEM_PROMPT,
-                    input=input_items,
-                    tools=TOOLS,
-                    tool_choice="none" if force_answer else "auto",
-                    parallel_tool_calls=False,
-                    reasoning={"effort": "none"},
-                    **request_options,
-                )
-                save_response(chat_file_path, response)
-                only_user_item_written = False
-                model_calls += 1
-                input_tokens += response.usage.input_tokens
-                output_tokens += response.usage.output_tokens
-                require_complete(response)
-
-                tool_call = next(
-                    (item for item in response.output if item.type == "function_call"),
-                    None,
-                )
-                if tool_call is None:
-                    answer = response_text(response)
-                    break
-                if force_answer:
-                    raise HarnessError("model requested a tool after tool use was disabled")
-
-                print(f"\ntool › {tool_call.name}({tool_call.arguments})")
-                if tool_calls >= TOOL_CALL_LIMIT:
-                    tool_result = tool_error(
-                        "ToolCallLimit",
-                        f"the limit of {TOOL_CALL_LIMIT} tool calls has been reached",
-                    )
-                    force_answer = True
-                else:
-                    tool_result = run_tool(tool_call)
-                    tool_calls += 1
-                print(f"tool ‹ {tool_result}")
-
-                history.append_item(
-                    chat_file_path,
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": tool_result,
-                    },
-                )
+            run_turn(client, chat_file_path, said, max_output_tokens)
         except KeyboardInterrupt:
-            if only_user_item_written:
-                history.drop_last_item(chat_file_path)
             print()
             break
-        except OpenAIError as error:
-            if only_user_item_written:
-                history.drop_last_item(chat_file_path)
-            sys.exit(f"API failed after retries: {error}")
-        except HarnessError as error:
-            sys.exit(f"harness failed: {error}")
-
-        print(f"\n››› {answer}")
-        print(
-            f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
-            f" · {input_tokens} in + {output_tokens} out]\n"
-        )
 
 
 if __name__ == "__main__":

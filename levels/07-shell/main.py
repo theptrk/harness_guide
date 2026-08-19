@@ -1,7 +1,7 @@
-"""Level 5 — stream model text and exclude unfinished turns.
+"""Level 7 — run approved shell commands from the confined workspace.
 
-    uv run --env-file .env levels/05-stream/main.py
-    uv run --env-file .env levels/05-stream/main.py --new
+    uv run --env-file .env levels/07-shell/main.py
+    uv run --env-file .env levels/07-shell/main.py --new
 """
 
 import json
@@ -13,33 +13,41 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
 
+import file_tools
 import history
+import shell_tools
 
 MODEL = "gpt-5.6-luna"
-SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
+SYSTEM_PROMPT = (
+    "You are a concise coding assistant. Use the tools to inspect and modify files "
+    "and run commands in your workspace. Every shell command requires approval. "
+    "A denied command is a final decision: "
+    "do not request the same denied action again unless the person explicitly asks. "
+    "Do not claim an action succeeded unless its tool result says it did."
+)
 TOOL_CALL_LIMIT = 5
 API_RETRIES = 2
 API_TIMEOUT_SECONDS = 30.0
 
-TOOLS = [
-    {
-        "type": "function",
-        "name": "get_current_time",
-        "description": "Get the current date and time in a specific timezone.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timezone": {
-                    "type": "string",
-                    "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
-                }
-            },
-            "required": ["timezone"],
-            "additionalProperties": False,
+TIME_TOOL = {
+    "type": "function",
+    "name": "get_current_time",
+    "description": "Get the current date and time in a specific timezone.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "timezone": {
+                "type": "string",
+                "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
+            }
         },
-        "strict": True,
-    }
-]
+        "required": ["timezone"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+TOOLS = [TIME_TOOL] + file_tools.TOOLS + [shell_tools.RUN_COMMAND_TOOL]
 
 
 class HarnessError(RuntimeError):
@@ -59,6 +67,11 @@ def get_current_time(timezone: str) -> str:
 
 TOOL_FUNCTIONS = {
     "get_current_time": get_current_time,
+    "list_files": file_tools.list_files,
+    "read_file": file_tools.read_file,
+    "write_file": file_tools.write_file,
+    "edit_file": file_tools.edit_file,
+    "run_command": shell_tools.run_command,
 }
 
 
@@ -338,6 +351,7 @@ def main() -> None:
 
     input_items = history.get_input_items(chat_file_path)
     print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
+    print("[workspace: levels/07-shell/agent_workspace]")
     print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
     while True:

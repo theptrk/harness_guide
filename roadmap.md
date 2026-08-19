@@ -2,9 +2,13 @@
 
 *Curriculum roadmap · draft v0.2*
 
-15 levels · 5 more, in draf
+15 levels · 5 more in draft
 
 Start with a single call to a model. Finish with an assistant that has its own computer, logs into your accounts, and asks for your help when it gets stuck.
+
+[roadmap-intermediate.md](roadmap-intermediate.md) names the larger design concerns behind each level. They stay out of the beginner lessons until the mechanism requires them.
+
+[roadmap-production.md](roadmap-production.md) collects defensive and operational additions for systems used by other people.
 
 
 ## What you're building
@@ -17,13 +21,13 @@ Here is one task from start to finish. It's the one that prompted this whole pro
 > It opens a browser, goes to railway.app, and hits the login page. It doesn't ask you for your password; it stops and tells you it needs you to sign in. 
 > You click into its browser window and you're the one typing, on its machine. You log in and tell it you're done.
 >
-> It takes back over and continues the task. It finds the instances on your account and works out that the $5 is the Hobby plan. Before it touches anything, it tries to establish what a cancelling the plan would break — what you have deployed, whether anything is still calling those deployments, and how long it's been since any of them last did anything. 
-> It reports to you the findings, intended action and the consequences - tells you it can't find anything you'd lose, and asks whether to go ahead. 
+> It takes back over and continues the task. It finds the instances on your account and works out that the $5 is the Hobby plan. Before it touches anything, it tries to establish what cancelling the plan would break — what you have deployed, whether anything is still calling those deployments, and how long it's been since any of them last did anything.
+> It reports the findings, intended action, and consequences. It tells you it can't find anything you'd lose and asks whether to go ahead.
 > You say yes. 
 > It does it.
 >
 
-> **Worth noticing** — That went well. The same sequence with a slightly less careful confimation takes down production even after realizing a very active instance. The bot is overly careful by default on destructive actions.
+> **Worth noticing** — That went well. The same sequence with a slightly less careful confirmation takes down production even after finding a very active instance. The bot is overly careful by default on destructive actions.
 
 Many pieces of software must be built to make the story above sound easy. Taking it from the top, here is where each piece gets built:
 
@@ -32,12 +36,12 @@ Many pieces of software must be built to make the story above sound easy. Taking
 | Holding a conversation | Level 1 |
 | Using a provided "tool" | Level 2 |
 | Using several tools to finish one request | Level 3 |
-| The streaming UX improvment | Level 5 |
-| Asking for confirmation for command line actions | Levels 7 |
+| The streaming UX improvement | Level 5 |
+| Asking for confirmation for command line actions | Level 7 |
 | A browser it can drive | Level 8 |
 | Notifying the human in the loop for assistance | Level 9 |
 | Carrying on in the browser you logged into | Level 9 |
-| Asking for confirmation for browser actions. | Levels 9 |
+| Asking for confirmation for browser actions | Level 9 |
 
 The rest of the ladder covers what this story doesn't touch: recovering from its own errors, somewhere to keep files and run them, staying reliable once the conversation gets long, reaching back into things you said weeks ago, and connecting to the accounts that *do* have a proper interface.
 
@@ -51,15 +55,15 @@ Read the right-hand column first. Each level exists because you ran a task on th
 | | **Part I — The Loop** | |
 | 0 | Call a model | — |
 | 1 | Hold a conversation | …remember what you just said |
-| 2 | One tool | …do arithmetic, or know what time it is |
+| 2 | One tool | …know what time it is |
 | 3 | The agent loop | …do two things in a row |
-| 4 | Harden the loop | …survive a tool that throws |
+| 4 | Harden the loop | …handle a failed tool or incomplete response |
 | 5 | Stream it | …show you anything while it works |
 | | **Part II — The Computer** | |
-| 6 | Files | …hold more than fits in a chat message |
-| 7 | Shell + approval | …run the code it just wrote |
+| 6 | Files | …create or change a file |
+| 7 | Run a command | …run the code it just wrote |
 | | **Part III — The Handoff** | |
-| 8 | The browser | …use a website |
+| 8 | Use a browser | …render a local page, click its button, and read the result |
 | 9 | Human takeover | …get past a login page |
 | | **Part IV — Reliability** | |
 | 10 | Trimming history | …survive its own conversation getting long |
@@ -87,11 +91,11 @@ A model answers one question at a time. It can't look anything up, and it doesn'
 
 `main.py "why is the sky blue"` → an answer. One file, one dependency. No framework, no database, no web server.
 
-- **Learn** — Where the API key lives and why it never goes in the code. The two pieces of text you send: the question, and a set of instructions that applies to every question, called the system prompt. How your words become tokens, which is the thing you're billed for.
-- **Done when** — You print the answer along with the token count and the cost of the call you just made
+- **Learn** — Where the API key lives and why it never goes in the code. The two pieces of text you send: the question, and a set of instructions that applies to every question, called the system prompt. How your words become tokens.
+- **Done when** — You print the answer and inspect its token counts
 - **Effort** — an hour
 
-> **Sidebar** — Read the raw response once, against the documentation. You won't need to again, but two things in it are worth seeing now: the answer is buried a few levels down inside an `output` list, and `model` reports what actually served you, which isn't always what you asked for. The second one is why the cost you calculate can be quietly wrong.
+> **Sidebar** — Read the raw response once, against the documentation. You won't need to again, but two things in it are worth seeing now: the answer is buried a few levels down inside an `output` list, and `model` reports what actually served you, which isn't always what you asked for. An explicit model ID makes later runs easier to compare.
 
 
 ### 01 · Hold a conversation
@@ -101,7 +105,7 @@ A model answers one question at a time. It can't look anything up, and it doesn'
 A prompt loop that writes down what happens as it happens: one line appended for every message you send and every one that comes back. Each conversation gets its own file under `chats/`, and starting the program either continues the most recent one or begins a new one. When it's time to call the model, read the current file and build the list of messages from it.
 
 - **Learn** — The model remembers nothing between calls, so keeping the record is your job. A conversation is sent as a list, in full, every single time. Building that list out of the record rather than letting the list *be* the record. And why a conversation needs a boundary: the next four levels are experiments, and without one their leftovers ride along in every call you make afterward.
-- **Done when** — You quit mid-conversation, restart, and it picks up where you left off. You start a new conversation and it doesn't know your name, while the old file still does. You delete the last two lines of a file and that conversation rewinds.
+- **Done when** — You quit mid-conversation, restart without `--new`, and it picks up where you left off. You start with `--new` and the separate conversation does not contain your name.
 - **Effort** — an hour
 
 > **Why not just keep the list in memory** — The obvious version keeps the messages in a Python list and saves it when the program exits. That's enough for this level. At Level 10 you start replacing old messages with a summary to stay under the size limit, and if the list is all you have, those messages are gone for good. Write to the file instead and build the list fresh on every call: then you can send a trimmed list while the file still holds every word. A conversation you keep returning to grows with no upper bound, which is fine — you never send the file, only the list you build from it. Disk is free. The amount you can send is not.
@@ -111,10 +115,10 @@ A prompt loop that writes down what happens as it happens: one line appended for
 
 **Breaks** — "What time is it in Tokyo?" → an answer that sounds current, from a model with no clock.
 
-One function — `get_current_time(tz)` — described to the model as a name, a sentence, and a list of arguments. A function offered to a model this way is called a *tool*, and the API parameter you send them in is called `tools`. Keep executable functions in a dictionary keyed by those names. Then the code can notice a tool request, select the function by name, run it, and send the result back.
+One function — `get_current_time(timezone)` — described to the model as a name, a sentence, and a list of arguments. A function offered to a model this way is called a *tool*, and the API parameter you send them in is called `tools`. Keep executable functions in a dictionary keyed by those names. Then the code can notice a tool request, select the function by name, run it, and send the result back.
 
 - **Learn** — How to describe a function so a model can ask for it. What its reply looks like when it wants that tool, how its name selects executable code, and how you hand the result back.
-- **Done when** — The model asks for the tool, your code runs the function behind it, and the answer is right because of that
+- **Done when** — One request produces a `get_current_time` call, a timestamp from Python, and a final answer on the second model call
 - **Effort** — an evening
 
 > **The whole point** — The model doesn't call your function. It replies with a message saying it wants to, and your code decides whether to run it. Everything the assistant can do, in every later level, works this way.
@@ -124,25 +128,25 @@ One function — `get_current_time(tz)` — described to the model as a name, a 
 
 **Breaks** — "What time is it in Tokyo and New York?" → your code runs one tool request and stops, because you only wrote it to handle one.
 
-Wrap the whole thing in a `while`: call the model, run whatever tools it asks for, send the results back, and go round again until it stops asking and just answers.
+Put one user request in `run_turn()`. Inside it, wrap the model call and tool execution in a `while`: send each result back and continue until the model stops asking for tools and answers. The separate outer loop belongs to the CLI and only waits for another user message.
 
-- **Learn** — The loop itself and when to stop going round. One pass is one model call plus whatever tool it asked for, and one request from you can take several passes.
+- **Learn** — The difference between a CLI session loop and the agent loop for one turn. One pass is one model call plus whatever tool it asked for, and one request from you can take several passes.
 - **Done when** — It calls the time tool for three timezones in a row, choosing the arguments itself, to finish one request
 - **Effort** — an evening
 
-> **Milestone** — That loop is what people mean by an agent, and it's about forty lines. Everything you add from here — files, a shell, a browser, your accounts — is another tool it can reach for. The loop itself barely changes again.
+> **Milestone** — That loop is what people mean by an agent. Everything you add from here — files, a shell, a browser, your accounts — is another tool it can reach for. Later levels add limits and failure handling, but the stop condition remains: continue after a tool result and stop after an answer.
 
 
 ### 04 · Harden the loop
 
 **Breaks** — The tool schema and Python registry disagree. A string has the right JSON type but is not a valid timezone. The model keeps requesting tools. A function raises and leaves its `function_call` without an output. A model request succeeds but returns a partial message or tool call.
 
-Check the response before executing it. Catch failures at the tool boundary and send structured error text back to the model, so it can read what went wrong and try something else. Cap executed tool calls. Configure the API client's timeout and retries. Put a timeout inside each future tool that performs blocking I/O; the clock tool does not.
+Check the response before executing it. Catch failures at the tool boundary and send structured error text back to the model, so it can read what went wrong and try something else. Cap executed tool calls. Configure the API client's timeout and retries. Preserve incomplete output and its stopping reason without projecting either into later model input. Put a timeout inside each future tool that performs blocking I/O; the clock tool does not.
 
-Then handle the truncated response, which looks like success. `status` is `incomplete` and `incomplete_details.reason` is one of exactly two things: `max_output_tokens`, meaning it hit a cap, or `content_filter`, meaning retrying is pointless. Re-sending the identical request is always wrong — same input, same cap, same result, twice the cost. Either raise the cap, or hand back the partial answer and ask it to carry on.
+Then handle the truncated response, which looks like success. `status` is `incomplete` and `incomplete_details.reason` is one of exactly two things: `max_output_tokens`, meaning it hit a cap, or `content_filter`, meaning retrying is pointless. Preserve partial output as an `incomplete_item` event while projecting only complete `api_item` events into later model input. Retrying without changing the request or token cap does not address the cause. Either raise the cap, or hand back the partial answer and ask it to carry on.
 
 - **Learn** — Letting the model read its own mistakes and correct them. Putting a ceiling on the loop so it can't spin forever. Telling apart a tool that failed from your program that failed, because you handle those two completely differently. And that a successful call can still hand you half an answer.
-- **Done when** — You deliberately break a tool and it either works around it or gives up with a clear explanation, without a stack trace. Then you cap the output mid-tool-call and it refuses to run the tool rather than acting on half an argument list.
+- **Done when** — An invalid timezone becomes a tool result instead of a stack trace, a sixth tool request receives `ToolCallLimit`, and an output capped mid-call is not executed.
 - **Effort** — an evening
 
 
@@ -150,13 +154,11 @@ Then handle the truncated response, which looks like success. `status` is `incom
 
 **Breaks** — Each model call leaves the terminal unchanged until its complete response arrives. If you interrupt a streamed response, partial text is visible but is not a valid message to send back to the API.
 
-Print text deltas as the API emits them. Record those deltas for display, then record the completed API item separately for conversation input. Give every event a turn ID and replay API items only after that turn completes. A second process can follow the JSONL file and render the same progress without calling the model or running a tool.
+Print text deltas as the API emits them. Keep those display fragments separate from the complete response item used as conversation input. Give every stored API and status event a turn ID, and include API items only after that turn completes.
 
-- **Learn** — Reading typed stream events. Separating display events from canonical API items. Keeping interrupted turns in the record without including them in later model input.
-- **Done when** — You can watch text arrive, follow the record from another process, interrupt a turn, and afterward replay what happened from the file alone.
+- **Learn** — Reading typed stream events. Separating displayed deltas from the terminal response. Keeping interrupted turns out of later model input.
+- **Done when** — You can watch text arrive, interrupt a turn, and restart without sending that unfinished turn back to the model.
 - **Effort** — an evening
-
-> **Why here** — The lines you add now are what the takeover screen reads at Level 9. Change the format after that and you're changing the screen, the replay, and every line already written to the file.
 
 
 ---
@@ -168,26 +170,26 @@ It can work through a problem and call your tools, but it has nowhere to put any
 
 ### 06 · Give it files
 
-**Breaks** — "Refactor this 400-line file." You paste the file in. It pastes 400 lines back. You paste those into your editor. This isn't software.
+**Breaks** — "Create a profile document. My name is Patrick and my favorite fruit is strawberries." It returns the right Markdown as answer text, but no file exists. You still have to copy the text into an editor.
 
-An `agent_workspace/` folder and four tools: list, read, write, edit. Every path resolved and confined inside that folder. All four go through one small module that does the actual reading and writing, rather than touching the filesystem themselves.
+An `agent_workspace/` folder and four tools: list, read, write, edit. Every path is resolved and confined inside that folder. All four go through one small module that does the actual reading and writing, rather than touching the filesystem themselves. The system prompt tells the model to use these tools and not claim a file changed unless a tool succeeded.
 
 - **Learn** — How `../` in a path walks straight out of your folder, which is your first security bug. Why replacing a few lines beats rewriting a whole file. How one big file eats the room you had left to send anything else.
-- **Done when** — It writes a working Python file whose contents you never saw in the chat
+- **Done when** — It creates and lists `profile.md`; a new conversation retrieves and edits its saved facts only after reading it; and `../main.py` is rejected.
 - **Effort** — an evening
 
 > **Why the extra module** — Today it looks like pointless indirection — four tools wrapping four filesystem calls. At Level 15 you point that module at a container instead of your laptop, and none of the four change.
 
 
-### 07 · Shell access, and asking permission
+### 07 · Run a command
 
-**Breaks** — It writes `primes.py` and can't run it. So you give it a way to run shell commands. Ten minutes later it runs something you didn't expect and your stomach drops.
+**Breaks** — It writes a Python script and cannot run it.
 
-A `run_command` tool, going through its own small module the way the file tools do, plus a gate in front of it. The gate sorts commands by what they'd break if the model has misjudged, not by what they do: reading anything is free and runs unasked, writing inside the workspace gets a prompt, and anything reaching the network or the world outside that folder stops and waits. Every command and its outcome goes into a separate audit log.
+A `run_command` tool executes one command from `agent_workspace/` and returns its exit code, stdout, and stderr. Every command shows the exact shell text and waits for a yes before it runs. File tools remain unchanged from Level 6.
 
-- **Learn** — The difference between what it's able to do and what it's allowed to do. Sorting actions by whether you can undo them, rather than by what they do. Why listing what's permitted beats listing what's forbidden. Stopping to ask a person without treating it as an error. Keeping an audit log you can read back later.
-- **Done when** — It writes code, runs it, reads the stack trace, fixes it, runs it again and succeeds — and you approved exactly the commands you meant to
-- **Effort** — a few evenings
+- **Learn** — File tools create code; a shell tool runs it. The model requests a command, the harness asks, Python executes only after approval, and the structured result goes back through the existing agent loop.
+- **Done when** — It creates `hello.py`, an approved `python hello.py` returns its output, and a denied second run produces no output.
+- **Effort** — an evening
 
 > **Foreshadowing** — Stopping, waiting for a person, and carrying on afterward is the same code Level 9 needs. There it waits for a login instead of a yes.
 
@@ -199,15 +201,15 @@ A `run_command` tool, going through its own small module the way the file tools 
 Most of what you'd want it to do sits behind a website with a login. By the end of Part III it drives a browser, hands you the keyboard when it reaches a page only you can get past, takes it back when you say you're done, and asks before doing anything it can't undo.
 
 
-### 08 · Give it a browser
+### 08 · Use a browser
 
-**Breaks** — "What's this $5 Railway charge?" Railway has no public interface for programs to call, and neither does your bank, your landlord's portal, or most of the software your life runs on. There's a website and that's it.
+**Improves** — A local page generates a random value only when a button is clicked. Level 7 can automate a browser by installing a library and running a task-specific script, but it has no direct browser interface. Railway is the real task behind the same need: the model should operate a persistent page through structured tools instead of constructing browser automation from shell commands.
 
-Playwright — a library that drives a real Chrome browser — exposed as tools: go to a URL, click, type, read the page, take a screenshot, scroll. Decide deliberately how a page gets described to the model, and keep the browser alive between tasks so it doesn't start cold every time.
+Playwright drives one visible Chromium window through exactly three model tools: `open_page`, `read_page`, and `click`. The browser starts only when needed and stays alive across tool calls and user turns in the same process. `open_page` accepts an HTTP/HTTPS URL or a confined local HTML path. Each tool result includes the current URL, title, rendered text, and visible interactive elements.
 
-- **Learn** — Two ways to show a model a page — a text outline of what's on it, or a screenshot it looks at — and when each is better. Referring to a button in a way that still works after the page redraws. Waiting for pages that aren't ready. The cookies that keep you signed in. Expect this to be the flakiest thing you own.
-- **Done when** — It answers a question you didn't give it the steps for, by reading several pages of a public site and putting them together — from a cold start, twice in a row. Point it at Railway and it gets as far as the login page, which is where Level 9 begins.
-- **Effort** — a weekend
+- **Learn** — A browser is stateful, so open, read, and click operate on the same page. Page source is not rendered state. Browser tool results return through the existing agent loop. `#value` selects the element with `id="value"`.
+- **Done when** — Start Level 8 with `--new`; create the Level 7 `random-button.html`; open it; click `#value`; read the page; and report the exact generated number. Point it at Railway and it reaches the login page, where it must stop because there is no human-handoff mechanism and the password must not be sent to the model.
+- **Effort** — an evening
 
 
 ### 09 · Human takeover  `The Railway task`
@@ -270,7 +272,7 @@ Everything you have ever told it is sitting in those conversation files, and it 
 
 **Breaks** — "Why did we pick Postgres again?" You discussed it three weeks ago, in a different conversation. That file is still on disk. The model has no idea it exists.
 
-Everything ever said is already on disk, spread across the conversation files from Level 1. What's missing is a way to reach into the ones it isn't currently in, and somewhere for the handful of facts that should stay in front of it permanently. So: a `memory.md` it can read and write, and tools to search across old conversations by text or date and pull a stretch of one back into view.
+Level 6's `profile.md` proved that a document can survive across conversations. It did not decide when a fact was worth saving or load that document without being asked. Everything ever said is also on disk, spread across the conversation files from Level 1. What's missing is retrieval policy: a way to reach conversations that are not currently in context, and somewhere for the handful of facts that should stay in front of the model permanently. So: a `memory.md` it can read and write, and tools to search old conversations by text or date and pull a relevant stretch back into view.
 
 - **Learn** — Why what was said, what it's working on now, and what it knows about you want to be three separate things rather than one. Looking something up as an ordinary tool call, with nothing clever behind it. Deciding *when* a thing is worth writing down, which is the part that stays hard.
 - **Done when** — "What did we decide about the database last week?" gets the right answer, long after that stretch of history stopped being sent — and you can open a file and see how it found it
@@ -341,7 +343,7 @@ Several of them, each with its own instructions, memory, connected accounts, fol
 
 **Breaks** — You give it a twenty-minute job, close your laptop, and it dies along with the web request that started it.
 
-Jobs go into a queue and separate processes pick them up: saving progress as they go, resuming after a crash, reporting they're alive, retrying, and telling you at 11am that the thing you asked for at 9 is done.
+Jobs go into a queue and separate processes pick them up: saving progress as they go, resuming after a crash, reporting they're alive, retrying, and telling you at 11am that the thing you asked for at 9 is done. When a client reconnects, it replays saved progress and then follows new events.
 
 - **Effort** — a weekend or more
 
@@ -389,7 +391,7 @@ No wrapper that lets you swap providers. A wrapper at Level 0 would hide the exa
 
 ### How long any of this takes
 
-The effort figures are guesses. Levels 0 through 5 are built; the rest would change with whoever is building them — so they're worth reading as relative weight only: Level 9 is a much bigger piece of work than Level 2. Replace each one with the real figure as the level gets built.
+The effort figures are guesses. Levels 0 through 8 are built; the rest would change with whoever is building them — so they're worth reading as relative weight only: Level 9 is a much bigger piece of work than Level 2. Replace each one with the real figure as the level gets built.
 
 ### Audience
 
@@ -406,4 +408,4 @@ Levels 0 to 14 stand on their own and finish with the Railway task working. The 
 
 ---
 
-*Draft v0.2 · Levels 0–5 built · Effort figures are guesses until a level has been built*
+*Draft v0.2 · Levels 0–8 built · Effort figures are guesses until a level has been built*

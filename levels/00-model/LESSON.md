@@ -6,7 +6,7 @@ This is the only level with nothing before it, so there's no "here's what broke"
 
 ---
 
-You need `uv` installed and a key in `.env` — that's the [Setup section of the README](../../README.md#setup), and it's the only setup in the whole course.
+You need `uv` installed and a key in `.env` — that's the [Setup section of the README](../../README.md#setup). Level 8 adds a one-time browser install.
 
 ---
 
@@ -23,66 +23,75 @@ Start with `--raw`:
 uv run --env-file .env levels/00-model/main.py --raw "why is the sky blue"
 ```
 
-That flag runs:
+We use the OpenAI SDK
 
 ```python
-if raw:
-    print(response.model_dump_json(indent=2))
+client = OpenAI()
+
+response = client.responses.create(
+    model=MODEL,
+    instructions=SYSTEM_PROMPT,  # applies to every question
+    input=question,              # user input
+    reasoning={"effort": "none"},
+)
 ```
 
-A truncated sample:
+That `--raw` flag makes the command print the output text twice:
+
+```python
+# once as the entire json model response
+if raw:
+    print(response.model_dump_json(indent=2))
+
+# once using the sdk helper property ".output_text"
+print(response.output_text)
+```
+
+A truncated sample of the JSON:
 
 ```json
 {
-  "id": "resp_088b100b6ca1b13c006a8363196528819b8164cb32fcd8be0a",
-  "created_at": 1786995481.0,
   ... 
+  "created_at": 1786995481.0,
   "instructions": "You are a concise assistant. Answer in a few sentences.",
   "model": "gpt-5.6-luna",
-  "object": "response",
+  "status": "completed",
   "output": [
     {
       "id": "msg_088b100b6ca1b13c006a83631aa1b8819b91a85f84570bd549",
       "content": [
         {
           "annotations": [],
-          "text": "Sunlight contains many colors. As it passes through Earth’s atmosphere, tiny air molecules scatter shorter wavelengths—especially blue—more strongly than longer red wavelengths. This scattered blue light reaches our eyes from all directions, making the sky appear blue.",
+          "text": "Sunlight contains many colors...",
           "type": "output_text",
-          "logprobs": []
         }
       ],
-      "role": "assistant",
       "status": "completed",
-      "type": "message",
-      "phase": "final_answer"
     }
   ],
   ...
   "completed_at": 1786995483.0,
   "usage": {
     "input_tokens": 27,
-    "input_tokens_details": {
-      "cache_write_tokens": 0,
-      "cached_tokens": 0
-    },
+    "input_tokens_details": {...},
     "output_tokens": 52,
-    "output_tokens_details": {
-      "reasoning_tokens": 0
-    },
+    "output_tokens_details": { "reasoning_tokens": 0 },
     "total_tokens": 79
   },
   ...
 }
 ```
 
-Read it against the [Responses API `create` docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Find these in that JSON:
+Read it against the [Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create) `create` [docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Find these in that JSON:
 
-| In the JSON | What it's for |
-| --- | --- |
-| `output[0].content[0].text` | the answer |
-| `usage.input_tokens`, `usage.output_tokens` | what you were billed for |
-| `usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Billed as output. Not in the text. |
-| `model` | which model served the request. Price this string. |
+
+| In the JSON                                    | What it's for                                                                                  |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `.output[0].content[0].text`                   | the answer                                                                                     |
+| `.usage.input_tokens`, `.usage.output_tokens`  | how many tokens the request used                                                               |
+| `usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Included in `output_tokens`. Not in the text. |
+| `model`                                        | which model served the request                                                                 |
+
 
 `reasoning_tokens` is inside `output_tokens`. The default is to think (`medium`). The sample shows `0` because `main.py` sets `reasoning={"effort": "none"}`. A later level that needs the thinking changes that one argument.
 
@@ -90,7 +99,7 @@ Read it against the [Responses API `create` docs](https://developers.openai.com/
 
 `response.output_text` is a helper. Search the JSON for a top-level `output_text` — it isn't there. The SDK walks `output`, keeps message items, keeps blocks whose type is `output_text`, and joins the strings. That walk is `output[0].content[0].text` on the payload above.
 
-In `openai-python` **v3.2.0** it's [this loop in `response.py`](https://github.com/openai/openai-python/blob/v3.2.0/src/openai/types/responses/response.py#L481-L493). Read it at the version you have; library code moves:
+In `openai-python` **v3.2.0** it's [this loop in](https://github.com/openai/openai-python/blob/v3.2.0/src/openai/types/responses/response.py#L481-L493) `response.py`. Read it at the version you have; library code moves:
 
 ```sh
 uv run python -c "import inspect; from openai.types.responses import Response; print(inspect.getsource(Response.output_text.fget))"
@@ -98,7 +107,7 @@ uv run python -c "import inspect; from openai.types.responses import Response; p
 
 It concatenates, and it skips anything that isn't a text block. Today `output` holds one message, so neither matters. From Level 2 it holds other kinds of item too, and `output_text` will hand you the text while ignoring them.
 
-The `model` row is the one you price. `main.py` asks for `gpt-5.6-luna` by name. `gpt-5.6` is an alias that currently points at Sol, which costs more. Aliases move. The code names the model you meant.
+`main.py` asks for `gpt-5.6-luna` by name. `gpt-5.6` is an alias that currently points at Sol. Aliases move. The code names the model you meant.
 
 `phase` on the message is `final_answer` here. Level 1 has to send that field back; ignoring it is a silent quality bug on this model family.
 
@@ -111,7 +120,7 @@ uv run --env-file .env levels/00-model/main.py "why is the sky blue"
 A few sentences about Rayleigh scattering, then:
 
 ```
-[27 in + 52 out tokens  0 reasoning  $0.000000  status=completed]
+[27 in + 52 out tokens  0 reasoning  status=completed]
 ```
 
 Same call. The difference is only how much of the response you chose to look at.
@@ -142,19 +151,18 @@ levels/00-model/
   main.py      the whole program
 ```
 
-The core of the code is this call
+The core of the code is this call:
 
 ```python
-    # Reads OPENAI_API_KEY from the environment. The key is never in this file.
-    client = OpenAI()
-
-    response = client.responses.create(
-        model="some-model-like-gpt5.6",
-        instructions="You are an AI bot called InfinityBot",  # applies to every question
-        input="Why is the sky blue",              # this question
-        reasoning={"effort": "none"},
-    )
+response = client.responses.create(
+    model=MODEL,
+    instructions=SYSTEM_PROMPT,
+    input=question,
+    reasoning={"effort": "none"},
+)
 ```
+
+`MODEL`, `SYSTEM_PROMPT`, and `question` are defined earlier in `main.py`. `question` comes from the command-line argument.
 
 ---
 
@@ -166,7 +174,7 @@ The core of the code is this call
 
 **You send two pieces of text, and they have different jobs.** `instructions` is the system prompt — it applies to every question you'll ever ask. `input` is this one question. Level 11 is about changing the first one and measuring what happens.
 
-**Tokens are the unit of everything.** Not characters, not words. The response tells you how many went in and how many came out, and that number is what you're billed on and what fills up the context window later. Every cost and capacity problem in this course is a token problem.
+**Tokens are the unit of model input and output.** Not characters, not words. The response tells you how many went in and how many came out. Those counts matter later when a conversation approaches the model's context limit.
 
 ---
 
@@ -174,11 +182,9 @@ The core of the code is this call
 
 ## Try these
 
-**Make the cost line true.** Look up the price for `gpt-5.6-luna` at [https://platform.openai.com/docs/pricing](https://platform.openai.com/docs/pricing) and put the two numbers into `PRICE_IN` and `PRICE_OUT` at the top of `main.py`. They're per million tokens. Then run it again and see what a question actually costs you.
+**See what an alias does.** In `main.py`, change `MODEL` to `"gpt-5.6"`, run with `--raw`, and look at `model`. You should see `gpt-5.6-sol`. Then put it back.
 
-**See what an alias does.** Set `MODEL` to `"gpt-5.6"`, run with `--raw`, and look at `model`. You should see `gpt-5.6-sol`. Then put it back.
-
-**Change the system prompt.** Set `SYSTEM_PROMPT` to `"Answer in exactly one word."` and ask the same question. Then try `"You are a pirate."` The system prompt is the largest single influence you have on behaviour, and it's one string.
+**Change the system prompt.** In `main.py`, set `SYSTEM_PROMPT` to `"Answer in exactly one word."` and ask the same question. Then try `"You are a pirate."` The system prompt is the largest single influence you have on behaviour, and it's one string.
 
 ---
 
@@ -186,7 +192,14 @@ The core of the code is this call
 
 ## Done when
 
-You can print an answer, the token counts, and a cost that isn't zero — because you looked the price up.
+1. Run:
+  ```sh
+   uv run --env-file .env levels/00-model/main.py --raw "Why is the sky blue?"
+  ```
+2. Confirm that the terminal shows:
+  - A raw response containing `output`, `usage`, `model`, and `status`.
+  - The answer text after the raw response.
+  - A final line with nonzero input and output token counts, `0 reasoning`, and `status=completed`.
 
 ---
 
@@ -203,9 +216,9 @@ uv run --env-file .env levels/00-model/main.py "What is my name?"
 
 It has no idea. Two separate calls, and the model kept nothing between them.
 
-```bash
-uv run levels/00-model/main.py "What is my name?"
-> I don’t know your name—you haven’t shared it with me.
+```text
+$ uv run --env-file .env levels/00-model/main.py "What is my name?"
+I don’t know your name—you haven’t shared it with me.
 ```
 
 That's [Level 1](../01-conversation/LESSON.md).

@@ -36,28 +36,14 @@ def append_event(path: Path, turn_id: str, kind: str, **data) -> None:
         file.write(json.dumps(event) + "\n")
 
 
-def append_api_item(
-    path: Path,
-    turn_id: str,
-    item: dict,
-) -> None:
+def append_api_item(path: Path, turn_id: str, item: dict) -> None:
     """Append an item eligible for later model input."""
-    append_event(
-        path,
-        turn_id,
-        "api_item",
-        item=item,
-    )
+    append_event(path, turn_id, "api_item", item=item)
 
 
 def append_incomplete_item(path: Path, turn_id: str, item: dict) -> None:
     """Append incomplete output that must never become model input."""
-    append_event(
-        path,
-        turn_id,
-        "incomplete_item",
-        item=item,
-    )
+    append_event(path, turn_id, "incomplete_item", item=item)
 
 
 def read_events(path: Path) -> list[dict]:

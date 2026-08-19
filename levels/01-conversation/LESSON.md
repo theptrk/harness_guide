@@ -16,29 +16,35 @@ It has no idea. The model kept nothing between the two calls, because a model ke
 ## Run it
 
 ```sh
-uv run --env-file .env levels/01-conversation/main.py
+uv run --env-file .env levels/01-conversation/main.py --new
 ```
 
 You get a prompt. Tell it your name, then ask what your name is:
 
 ```
-[2026-08-17-114420.jsonl · 0 messages so far]
+[2026-08-17-114420-278577.jsonl · 0 messages so far]
 Ctrl-D to leave. Nothing is lost when you do.
 
 you › My name is Patrick.
 
 ››› Hi Patrick, good to meet you.
-    [24 in + 8 out]
+    [24 in + 8 out  0 reasoning]
 
 you › What is my name?
 
 ››› Your name is Patrick.
-    [41 in + 6 out]
+    [41 in + 6 out  0 reasoning]
 ```
 
 Look at the token counts. The second call sent 41 input tokens for a five-word question, because it sent the whole conversation again. Each new message makes the conversation longer, so the next call sends more input tokens. Eventually the conversation becomes too large to send in full; Level 10 handles that by trimming the history.
 
-Press `Ctrl-D`, run the same command again, and ask again. On startup, the code finds the latest chat file and sends its messages with your new question. The model can answer because your program restored the conversation, not because the model remembered it.
+Press `Ctrl-D`, then continue without `--new`:
+
+```sh
+uv run --env-file .env levels/01-conversation/main.py
+```
+
+Ask for your name again. On startup, the code finds the latest chat file and sends its messages with your new question. The model can answer because your program restored the conversation, not because the model remembered it.
 
 This is the path from the file to the request:
 
@@ -62,8 +68,6 @@ uv run --env-file .env levels/01-conversation/main.py --new
 
 ---
 
-
-
 ## What's in here
 
 ```
@@ -74,13 +78,11 @@ levels/01-conversation/
   chats/        made when you first run it, gitignored
 ```
 
-Files under `chats/` are named for when the conversation started: `YYYY-MM-DD-HHMMSS.jsonl`. This format makes filename order match start-time order.
+Files under `chats/` are named for when the conversation started: `YYYY-MM-DD-HHMMSS-ffffff.jsonl`. The last six digits are microseconds, so two `--new` runs do not reuse the same file.
 
 `main.py` now repeats the prompt and model call in a `while` loop. The new `history.py` module persists each message and rebuilds the input for the next call.
 
 ---
-
-
 
 ## The shape of it
 
@@ -101,13 +103,11 @@ The file is the record; the list is rebuilt from it for each call. During one ru
 
 The user line is written before the call. If the call fails, or you hit Ctrl-C during it, `drop_last` takes that line back off — otherwise the next restart would send a question that never got an answer.
 
-`[phase](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter)` is `final_answer` or `commentary`. The API uses it to mark the message as the answer versus a mid-turn remark. For this model family, follow-up calls are supposed to send it back on every assistant message. Dropping it can make later turns worse.
+[`phase`](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter) is `final_answer` or `commentary`. The API uses it to mark the message as the answer versus a mid-turn remark. For this model family, follow-up calls are supposed to send it back on every assistant message. Dropping it can make later turns worse.
 
 ---
 
-
-
-## [Optional] - Delete messages from history
+## Optional checks
 
 **Watch it rewind.** Delete the last two lines of a conversation and it forgets the last exchange, because the file is the only thing that remembers:
 
@@ -123,43 +123,54 @@ Start the program again and the last thing you talked about never happened.
 > uv run --env-file .env levels/01-conversation/main.py --new
 > ```
 
-It doesn't know. The old file still does:
+It doesn't know. List the chat files, then open the older one and confirm that it still contains the first exchange:
 
 ```sh
 ls -t levels/01-conversation/chats/
 ```
 
-**Count what it's costing you.** Have a ten-turn conversation, then:
+**Count the record.** Have a ten-turn conversation, then:
 
 ```sh
 wc -l levels/01-conversation/chats/*.jsonl
 ```
 
-Every one of those lines was sent on the last call, and on every call before it.
+The last call sent every line that existed before that call. Earlier calls sent the shorter record that existed at the time.
 
 ---
-
-
 
 ## Why start a new conversation?
 
-By default, the program reopens the latest chat file and sends its messages on the next call. Use `--new` before testing unrelated behavior. Otherwise, old test instructions, tool calls, and errors remain in the input and can affect later responses. Starting a new conversation creates an empty chat file; it does not delete the old one.
+By default, the program reopens the latest chat file and sends its messages on the next call. Use `--new` before testing unrelated behavior. Otherwise, old questions, instructions, and answers remain in the input and can affect later responses. Starting a new conversation creates an empty chat file; it does not delete the old one.
 
 ---
-
-
 
 ## Done when
 
-Three things are true:
+1. Start a new conversation:
 
-1. You quit mid-conversation, restart, and it picks up where you left off.
-2. You start a new conversation and it doesn't know your name, while the old file still does.
-3. You delete the last two lines of a file and that conversation rewinds.
+   ```sh
+   uv run --env-file .env levels/01-conversation/main.py --new
+   ```
+
+2. Enter `My name is Patrick.` Wait for the reply, then press `Ctrl-D`.
+3. Continue the latest conversation by excluding `--new`:
+
+   ```sh
+   uv run --env-file .env levels/01-conversation/main.py
+   ```
+
+4. Enter `What is my name?` Confirm that it answers `Patrick`, then press `Ctrl-D`.
+5. Start a new conversation:
+
+   ```sh
+   uv run --env-file .env levels/01-conversation/main.py --new
+   ```
+
+6. Confirm that the header says `0 messages so far`.
+7. Enter `What is my name?` Confirm that it says it does not know.
 
 ---
-
-
 
 ## What breaks next
 

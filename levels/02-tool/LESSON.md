@@ -34,7 +34,7 @@ uv run --env-file .env levels/02-tool/main.py --new
 Ask:
 
 ```text
-you › What time is it in Tokyo?
+you › Use get_current_time to tell me the current time in Tokyo.
 ```
 
 The output includes the requested call and the value returned by Python:
@@ -57,11 +57,21 @@ There are two model calls. The first asks to use the tool. Your code runs the fu
 levels/02-tool/
   LESSON.md
   main.py       the prompt loop and the time tool
-  history.py    the conversation record from Level 1
+  history.py    the conversation record, now storing API items
   chats/        made when you first run it, gitignored
 ```
 
 `history.py` changes at this level. The chat file now stores every item sent through `input` and every item returned in `response.output`, including function calls and their results. The tool definition, Python function, and one-tool round trip remain in `main.py`.
+
+Level 1 stored message fields at the top level of each JSONL line. Level 2 stores any API item under `item`:
+
+```json
+{"at": "...", "item": {"role": "user", "content": "Use get_current_time..."}}
+{"at": "...", "item": {"type": "function_call", "name": "get_current_time", "call_id": "call_..."}}
+{"at": "...", "item": {"type": "function_call_output", "call_id": "call_...", "output": "..."}}
+```
+
+The wrapper belongs to this program. `get_input_items()` removes it before calling the API.
 
 ---
 
@@ -173,7 +183,14 @@ for output_item in response.output:
 
 ## Sending the result back
 
-The second request needs both the model's function call and the corresponding result. The function call is already on disk. Append the result:
+A `function_call` describes what the model wants Python to run; it is not the answer. If the item says its status is `completed`, that means the model finished generating the request. The Python function has not run yet.
+
+After Python runs the function, the next model request must include two items:
+
+1. The original `function_call`.
+2. A `function_call_output` with the same `call_id` and the function's result.
+
+The function call is already on disk. Append its result:
 
 ```python
 history.append_item(
@@ -188,7 +205,14 @@ history.append_item(
 input_items = history.get_input_items(chat_file_path)
 ```
 
-`call_id` connects the result to the request. `get_input_items()` rebuilds the second request from the file; the function call and result are not held only in memory. The model can then answer using the timestamp returned by Python.
+The matching `call_id` connects this output to the model's request:
+
+```text
+function_call(call_...)
+function_call_output(call_...)
+```
+
+`get_input_items()` rebuilds the second request from the file, including both items. The model can then answer using the timestamp returned by Python.
 
 After the second model call, the same loop appends its output items. A completed round trip contains, in order:
 
@@ -203,11 +227,18 @@ This level handles at most one tool call per model response. `parallel_tool_call
 
 ## Done when
 
-Ask for the current time in a timezone. The terminal should show:
+1. Start a new conversation:
 
-1. A `get_current_time` request from the model.
-2. A timestamp returned by the Python function.
-3. A final answer based on that timestamp.
+   ```sh
+   uv run --env-file .env levels/02-tool/main.py --new
+   ```
+
+2. Enter `Use get_current_time to tell me the current time in Tokyo.`
+3. Confirm that the terminal shows, in order:
+   - `tool › get_current_time({"timezone":"Asia/Tokyo"})`
+   - A `tool ‹` result containing an ISO timestamp.
+   - A final answer giving the Tokyo time.
+   - A usage line reporting `2 model call(s)`.
 
 ---
 
@@ -218,7 +249,7 @@ Ask for two current times:
 The code handles the first tool request. If the model asks for the second timezone on its next response, the code does not run that request. Handling an unknown number of tool calls requires a loop around the model call, tool execution, and tool result.
 
 ```text
-you › What time is it in Tokyo and New York?
+you › Use get_current_time once for each city. What time is it in Tokyo and New York?
 
 tool › get_current_time({"timezone":"Asia/Tokyo"})
 tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T08:33:07+09:00"}

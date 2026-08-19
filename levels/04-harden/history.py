@@ -1,4 +1,4 @@
-"""Persist every Responses API item as an append-only JSONL event."""
+"""Persist complete and incomplete API items as typed JSONL events."""
 
 import json
 from datetime import datetime
@@ -10,9 +10,9 @@ CHATS = Path(__file__).parent / "chats"
 def new_chat() -> Path:
     """Create an empty conversation file."""
     CHATS.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")
     path = CHATS / f"{stamp}.jsonl"
-    path.touch()
+    path.touch(exist_ok=False)
     return path
 
 
@@ -24,15 +24,25 @@ def latest_chat() -> Path | None:
     return chats[-1] if chats else None
 
 
-def append_item(path: Path, item: dict, include_in_input: bool = True) -> None:
-    """Append one API item with a local timestamp."""
-    line = {
+def append_event(path: Path, kind: str, **data) -> None:
+    """Append one typed event with a local timestamp."""
+    event = {
         "at": datetime.now().isoformat(),
-        "item": item,
-        "include_in_input": include_in_input,
+        "kind": kind,
+        **data,
     }
     with path.open("a") as file:
-        file.write(json.dumps(line) + "\n")
+        file.write(json.dumps(event) + "\n")
+
+
+def append_api_item(path: Path, item: dict) -> None:
+    """Append an item eligible for later model input."""
+    append_event(path, "api_item", item=item)
+
+
+def append_incomplete_item(path: Path, item: dict) -> None:
+    """Append incomplete output that must never become model input."""
+    append_event(path, "incomplete_item", item=item)
 
 
 def drop_last_item(path: Path) -> None:
@@ -45,12 +55,12 @@ def drop_last_item(path: Path) -> None:
 
 
 def get_input_items(path: Path) -> list[dict]:
-    """Build API input from events marked for replay."""
+    """Project API item events into model input."""
     items = []
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         entry = json.loads(line)
-        if entry["include_in_input"]:
+        if entry["kind"] == "api_item":
             items.append(entry["item"])
     return items
