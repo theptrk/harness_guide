@@ -6,7 +6,7 @@ This is the only level with nothing before it, so there's no "here's what broke"
 
 ---
 
-You need `uv` installed and a key in `.env` — that's the [Setup section of the README](../../README.md#setup). Level 8 adds a one-time browser install.
+You need `uv` installed and a key in `.env` — that's the [Setup section of the README](../../README.md#setup). Level 8 adds a one-time Chromium install.
 
 ---
 
@@ -85,12 +85,12 @@ A truncated sample of the JSON:
 Read it against the [Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create) `create` [docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Find these in that JSON:
 
 
-| In the JSON                                    | What it's for                                                                                  |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `.output[0].content[0].text`                   | the answer                                                                                     |
-| `.usage.input_tokens`, `.usage.output_tokens`  | how many tokens the request used                                                               |
-| `usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Included in `output_tokens`. Not in the text. |
-| `model`                                        | which model served the request                                                                 |
+| In the JSON                                     | What it's for                                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `.output[0].content[0].text`                    | the answer                                                                                     |
+| `.usage.input_tokens`, `.usage.output_tokens`   | how many tokens the request used                                                               |
+| `.usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Included in `output_tokens`. Not in the text. |
+| `model`                                         | which model served the request                                                                 |
 
 
 `reasoning_tokens` is inside `output_tokens`. The default is to think (`medium`). The sample shows `0` because `main.py` sets `reasoning={"effort": "none"}`. A later level that needs the thinking changes that one argument.
@@ -172,7 +172,11 @@ response = client.responses.create(
 
 **The key lives in the environment, not the code.** `OpenAI()` reads `OPENAI_API_KEY` on its own. You never pass it in, never assign it to a variable, never let it near a file you might commit.
 
-**You send two pieces of text, and they have different jobs.** `instructions` is the system prompt — it applies to every question you'll ever ask. `input` is this one question. Level 11 is about changing the first one and measuring what happens.
+**You send two pieces of text, and they have different jobs.** `instructions`
+is the system prompt — it applies to every question you'll ever ask. `input` is
+this one question. The evaluation chapter in
+[Advanced Agent Concepts](../../roadmap-intermediate.md) changes the first one
+and measures what happens.
 
 **Tokens are the unit of model input and output.** Not characters, not words. The response tells you how many went in and how many came out. Those counts matter later when a conversation approaches the model's context limit.
 

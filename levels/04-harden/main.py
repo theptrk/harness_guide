@@ -223,7 +223,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
     except HarnessError as error:
         sys.exit(f"harness failed: {error}")
 
-    print(f"\n››› {answer}")
+    print(f"\n🤖 model › {answer}")
     print(
         f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
         f" · {input_tokens} in + {output_tokens} out]\n"
@@ -252,7 +252,7 @@ def main() -> None:
 
     while True:
         try:
-            said = input("you › ").strip()
+            said = input("📝 you › ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break

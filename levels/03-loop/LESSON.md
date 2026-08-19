@@ -5,7 +5,7 @@
 Level 2 handles one tool request. Asking for two timezones produced:
 
 ```text
-you › Use get_current_time once for each city. What time is it in Tokyo and New York?
+📝 you › Use get_current_time once for each city. What time is it in Tokyo and New York?
 
 tool › get_current_time({"timezone":"Asia/Tokyo"})
 tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T08:33:07+09:00"}
@@ -36,7 +36,7 @@ uv run --env-file .env levels/03-loop/main.py --new
 Ask for three current times:
 
 ```text
-you › Use get_current_time once for each city. What time is it in Tokyo, New York, and London?
+📝 you › Use get_current_time once for each city. What time is it in Tokyo, New York, and London?
 ```
 
 This run produced:
@@ -51,7 +51,7 @@ tool ‹ {"timezone": "America/New_York", "datetime": "2026-08-17T19:54:15-04:00
 tool › get_current_time({"timezone":"Europe/London"})
 tool ‹ {"timezone": "Europe/London", "datetime": "2026-08-18T00:54:17+01:00"}
 
-››› - **Tokyo:** 8:54 AM, August 18
+🤖 model › - **Tokyo:** 8:54 AM, August 18
 - **New York:** 7:54 PM, August 17
 - **London:** 12:54 AM, August 18
     [4 model call(s) · 1078 in + 111 out]
@@ -69,7 +69,7 @@ The two loops have different owners and stop conditions.
 
 ```python
 while True:
-    said = input("you › ").strip()
+    said = input("📝 you › ").strip()
     run_turn(client, chat_file_path, said)
 ```
 

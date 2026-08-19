@@ -1,14 +1,21 @@
 # Infinite Teammates
 
-Building an agent from first principles, one level at a time — up to something that opens a browser, asks you to sign in when it hits a login wall, and picks the task back up.
+Building an AI agent harness from first principles, one level at a time.
 
-[**roadmap.md**](roadmap.md) is the plan: all twenty levels, what breaks at each one, and what's still undecided.
+[**Series 1 — Build an Agent Harness**](roadmap.md) is the implemented
+introduction. Levels 0–8 build a model call into a local agent with persistence,
+tools, an agent loop, files, shell commands, and a browser.
 
-[**roadmap-intermediate.md**](roadmap-intermediate.md) keeps larger design concerns beside the beginner path without putting them into the lessons.
+[**Series 2 — Advanced Agent Concepts**](roadmap-intermediate.md) plans the
+follow-on concepts: hosted tools, context selection, evaluation, memory, account
+connections, plugins, multiple assistants, model capability, and provider
+adapters.
 
-[**roadmap-production.md**](roadmap-production.md) collects the defensive and operational work needed beyond the course.
+[**Series 3 — Production Agent Systems**](roadmap-production.md) covers
+sandboxing, durable computers, background work, identity, secrets, concurrency,
+browser security, observability, quotas, deployment, and recovery.
 
-The lessons are the guide. Start here:
+The Series 1 lessons are the guide. Start here:
 
 | Level | | |
 |---|---|---|

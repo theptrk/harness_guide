@@ -125,7 +125,7 @@ def run_turn(client, chat_file_path, said: str) -> None:
         print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
         return
 
-    print(f"\n››› {answer}")
+    print(f"\n🤖 model › {answer}")
     print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
 
 
@@ -146,7 +146,7 @@ def main() -> None:
 
     while True:
         try:
-            said = input("you › ").strip()
+            said = input("📝 you › ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break

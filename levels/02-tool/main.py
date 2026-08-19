@@ -71,7 +71,7 @@ def main() -> None:
 
     while True:
         try:
-            said = input("you › ").strip()
+            said = input("📝 you › ").strip()
         except EOFError:
             print()
             break
@@ -170,7 +170,7 @@ def main() -> None:
             print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
             continue
 
-        print(f"\n››› {answer}")
+        print(f"\n🤖 model › {answer}")
         print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
 
 

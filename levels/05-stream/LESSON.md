@@ -29,7 +29,7 @@ It prints the new chat filename and waits:
 Ask for enough text to see it arrive:
 
 ```text
-you › Explain in six short bullet points how UTC offsets work.
+📝 you › Explain in six short bullet points how UTC offsets work.
 ```
 
 One run returned:
@@ -37,7 +37,7 @@ One run returned:
 ```text
 [model call 1 started]
 
-model › - UTC is the global reference time, with an offset of **+00:00**.
+🤖 model › - UTC is the global reference time, with an offset of **+00:00**.
 - An offset tells you how far local time differs from UTC.
 - Positive offsets are ahead of UTC, such as **UTC+02:00**.
 - Negative offsets are behind UTC, such as **UTC−05:00**.
@@ -175,7 +175,7 @@ This also handles a process that stops before it can append `turn_interrupted`: 
 To see that behavior, ask for a response long enough to interrupt:
 
 ```text
-you › Write the numbers 1 through 200, one per line.
+📝 you › Write the numbers 1 through 200, one per line.
 ```
 
 Press `Ctrl-C` after some numbers appear. The harness appends:
@@ -222,9 +222,9 @@ The SDK can retry some failures before a stream begins. Once output has arrived,
 Ask it to create a file:
 
 ````text
-you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
+📝 you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
 
-model › I can’t create files directly here, but `profile.md` should contain:
+🤖 model › I can’t create files directly here, but `profile.md` should contain:
 
 ```markdown
 # Profile

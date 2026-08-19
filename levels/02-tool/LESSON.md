@@ -5,7 +5,7 @@
 Level 1 can continue a conversation, but the model still has no clock. Ask:
 
 ```text
-you › What time is it in Tokyo?
+📝 you › What time is it in Tokyo?
 ```
 
 It may answer with a plausible time. The text is not evidence that it checked the time.
@@ -34,7 +34,7 @@ uv run --env-file .env levels/02-tool/main.py --new
 Ask:
 
 ```text
-you › Use get_current_time to tell me the current time in Tokyo.
+📝 you › Use get_current_time to tell me the current time in Tokyo.
 ```
 
 The output includes the requested call and the value returned by Python:
@@ -43,7 +43,7 @@ The output includes the requested call and the value returned by Python:
 tool › get_current_time({"timezone":"Asia/Tokyo"})
 tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T07:23:41+09:00"}
 
-››› It is 7:23 AM on August 18 in Tokyo.
+🤖 model › It is 7:23 AM on August 18 in Tokyo.
     [2 model call(s) · ...]
 ```
 
@@ -249,7 +249,7 @@ Ask for two current times:
 The code handles the first tool request. If the model asks for the second timezone on its next response, the code does not run that request. Handling an unknown number of tool calls requires a loop around the model call, tool execution, and tool result.
 
 ```text
-you › Use get_current_time once for each city. What time is it in Tokyo and New York?
+📝 you › Use get_current_time once for each city. What time is it in Tokyo and New York?
 
 tool › get_current_time({"timezone":"Asia/Tokyo"})
 tool ‹ {"timezone": "Asia/Tokyo", "datetime": "2026-08-18T08:33:07+09:00"}

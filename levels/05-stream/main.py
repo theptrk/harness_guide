@@ -195,7 +195,7 @@ def stream_response(
                 "response.refusal.delta",
             }:
                 if not text_started:
-                    print("\nmodel › ", end="", flush=True)
+                    print("\n🤖 model › ", end="", flush=True)
                 print(event.delta, end="", flush=True)
                 text_started = True
             elif event.type in {
@@ -256,7 +256,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
             if tool_call is None:
                 answer = response_text(response)
                 if not text_was_streamed:
-                    print(f"\nmodel › {answer}")
+                    print(f"\n🤖 model › {answer}")
                 break
             if force_answer:
                 raise HarnessError("model requested a tool after tool use was disabled")
@@ -342,7 +342,7 @@ def main() -> None:
 
     while True:
         try:
-            said = input("you › ").strip()
+                said = input("📝 you › ").strip()
         except EOFError:
             print()
             break

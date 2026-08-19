@@ -5,16 +5,14 @@
 At the end of Level 5, the model returned:
 
 ```text
-you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
+📝 you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
 
-model › I can’t create files directly here, but `profile.md` should contain:
+🤖 model › I can’t create files directly here, but `profile.md` should contain:
 
-```markdown
 # Profile
 
 - Name: Patrick
 - Favorite fruit: Strawberries
-```
 ```
 
 It produced the right document as answer text, but no file existed.
@@ -65,7 +63,7 @@ The startup text names the only directory the tools can access:
 Ask:
 
 ```text
-you › Use write_file to create profile.md with exactly this content:
+📝 you › Use write_file to create profile.md with exactly this content:
 # Profile
 
 - Name: Patrick
@@ -92,13 +90,13 @@ uv run --env-file .env levels/06-files/main.py --new
 First ask without letting it inspect the workspace:
 
 ```text
-you › Without using tools, what is my name and favorite fruit?
+📝 you › Without using tools, what is my name and favorite fruit?
 ```
 
 The new conversation does not contain the creation request, so the model should say it does not know. Now direct it to the file:
 
 ```text
-you › Use read_file to read profile.md. What is my name and favorite fruit?
+📝 you › Use read_file to read profile.md. What is my name and favorite fruit?
 ```
 
 The answer should now contain `Patrick` and `strawberries`.
@@ -106,13 +104,13 @@ The answer should now contain `Patrick` and `strawberries`.
 Update one fact without replacing the whole document:
 
 ```text
-you › Use edit_file to change my favorite fruit from strawberries to mangoes.
+📝 you › Use edit_file to change my favorite fruit from strawberries to mangoes.
 ```
 
 Verify the edit:
 
 ```text
-you › Use read_file to read profile.md. What is my favorite fruit now?
+📝 you › Use read_file to read profile.md. What is my favorite fruit now?
 ```
 
 `profile.md` remains in `agent_workspace/` across conversations. The model knows its contents only after a tool call reads it.
@@ -209,7 +207,7 @@ This is an application-level boundary, not an operating-system sandbox. Code in 
 `main.py` is one directory above `agent_workspace/`. Try to read it:
 
 ```text
-you › Use read_file to read ../main.py.
+📝 you › Use read_file to read ../main.py.
 ```
 
 Without the containment check, `..` would move out of the workspace and expose the program's source file. The tool should instead return a `WorkspacePathError`. Level 4's error handling sends that failure back to the model instead of ending the process.
@@ -252,7 +250,10 @@ Replacing one exact block requires less model-generated argument text than sendi
 
 The terminal and JSONL file contain the complete write arguments and read results. Those canonical API items are sent to the next model call so it knows what was written or read.
 
-A large `read_file` result therefore consumes input tokens on every later model call in that conversation. Level 10 changes which completed API items are replayed when the history becomes too large.
+A large `read_file` result therefore consumes input tokens on every later model
+call in that conversation. The context-selection chapter in
+[Advanced Agent Concepts](../../roadmap-intermediate.md) changes which completed
+API items are sent when the history becomes too large.
 
 ---
 

@@ -5,7 +5,7 @@
 Level 6 can create a Python script:
 
 ```text
-you › Create hello.py with a print statement, then run it.
+📝 you › Create hello.py with a print statement, then run it.
 ```
 
 It can call `write_file`, but its tool list has no command runner. No Python
@@ -25,7 +25,7 @@ uv run --env-file .env levels/07-shell/main.py --new
 Create a small script:
 
 ```text
-you › Use write_file to create hello.py with exactly:
+📝 you › Use write_file to create hello.py with exactly:
 print("hello from level 7")
 ```
 
@@ -39,7 +39,7 @@ tool ‹ {"path": "hello.py", "written": true, "characters": 27}
 Now run it:
 
 ```text
-you › Use run_command to run exactly: python hello.py
+📝 you › Use run_command to run exactly: python hello.py
 ```
 
 Before Python runs, the harness shows the exact command:
@@ -196,7 +196,8 @@ not to request the same denied command again unless you explicitly ask.
 
 Approval is not sandboxing. The command starts in `agent_workspace`, but
 `shell=True` gives an approved command the permissions of your Python process.
-Level 15 adds an operating-system boundary.
+The [production series](../../roadmap-production.md) adds an operating-system
+boundary.
 
 ---
 
@@ -244,11 +245,33 @@ exact number displayed on the button. Do not infer a value from the source.
 You may get an answer like this:
 
 ```text
-model › Created `random-button.html` exactly as requested. I can’t open a rendered browser page or click the button in this environment, so I can’t report the generated number.
+🤖 model › Created `random-button.html` exactly as requested. I can’t open a rendered browser page or click the button in this environment, so I can’t report the generated number.
 ```
 
-Level 7 can technically complete this task through `run_command` if it had the reasoning capability and could plan the multi step process to write and run a browser automation script to do it. The shell provides the underlying capability, not a browser interface. A more capable or more deliberate model may recognize that route; another model may stop because no browser tool was named.
+The response above came from Sol with reasoning effort set to `none`. In another
+run, Sol with reasoning effort set to `medium` requested a Node script that
+would launch Playwright, open the file, click `#value`, and print its text. The
+plan was sound, but the command failed because the Node Playwright package was
+not installed.
 
-Level 8 gives the model three browser tools: `open_page`, `read_page`, and
-`click`. You install Chromium once. All three tools operate on the same page and
-return its rendered state without requiring the model to write a browser script.
+One run does not measure how reliably a model will find that plan. It does show
+that changing the reasoning effort can change how the model uses the same
+tools. More reasoning produced a multi-step plan instead of a refusal, but it
+did not prevent an incorrect assumption about the environment.
+
+The Level 7 harness already provides enough raw access to complete the task. The
+model must recognize browser automation as a shell solution, check whether
+Playwright and Chromium are available, write a script, run it, and recover if a
+step fails.
+
+Tool access and ++***reliable***++ tool use are different. The harness determines which
+actions are possible. Model capability affects whether the model can discover
+the required actions and arrange them into a working sequence. More reasoning
+effort gives a reasoning model more opportunity to form and check that plan,
+but it does not add tools or permissions.
+
+Level 8 moves that work into the harness. You install Chromium once, and
+`browser_tools.py` starts and preserves the browser page. The model chooses
+among `open_page`, `read_page`, `type_text`, and `click` instead of writing a
+browser script. A shorter plan makes the task less dependent on model
+capability.

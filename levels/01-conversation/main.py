@@ -41,7 +41,7 @@ def main() -> None:
 
     while True:
         try:
-            said = input("you › ").strip()
+            said = input("📝 you › ").strip()
         except EOFError:
             print()
             break
@@ -79,7 +79,7 @@ def main() -> None:
 
         used = response.usage
         reasoning = used.output_tokens_details.reasoning_tokens
-        print(f"\n››› {answer}")
+        print(f"\n🤖 model › {answer}")
         print(f"    [{used.input_tokens} in + {used.output_tokens} out  {reasoning} reasoning]\n")
 
 

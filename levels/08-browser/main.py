@@ -23,8 +23,10 @@ SYSTEM_PROMPT = (
     "You are a concise coding assistant. Use the tools to inspect and modify files, "
     "run commands, and operate one persistent browser page. Every shell command "
     "requires approval. A denied command is a final decision: do not request the "
-    "same denied action again unless the person explicitly asks. Do not claim an "
-    "action succeeded unless its tool result says it did."
+    "same denied action again unless the person explicitly asks. If a page requires "
+    "a CAPTCHA or other human verification, ask the person to complete it in the "
+    "visible browser and tell you when they are done. Do not claim an action "
+    "succeeded unless its tool result says it did."
 )
 TOOL_CALL_LIMIT = 5
 API_RETRIES = 2
@@ -80,6 +82,7 @@ TOOL_FUNCTIONS = {
     "run_command": shell_tools.run_command,
     "open_page": browser_tools.open_page,
     "read_page": browser_tools.read_page,
+    "type_text": browser_tools.type_text,
     "click": browser_tools.click,
 }
 

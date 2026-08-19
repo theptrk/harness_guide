@@ -25,18 +25,23 @@ You get a prompt. Tell it your name, then ask what your name is:
 [2026-08-17-114420-278577.jsonl · 0 messages so far]
 Ctrl-D to leave. Nothing is lost when you do.
 
-you › My name is Patrick.
+📝 you › My name is Patrick.
 
-››› Hi Patrick, good to meet you.
+🤖 model › Hi Patrick, good to meet you.
     [24 in + 8 out  0 reasoning]
 
-you › What is my name?
+📝 you › What is my name?
 
-››› Your name is Patrick.
+🤖 model › Your name is Patrick.
     [41 in + 6 out  0 reasoning]
 ```
 
-Look at the token counts. The second call sent 41 input tokens for a five-word question, because it sent the whole conversation again. Each new message makes the conversation longer, so the next call sends more input tokens. Eventually the conversation becomes too large to send in full; Level 10 handles that by trimming the history.
+Look at the token counts. The second call sent 41 input tokens for a five-word
+question, because it sent the whole conversation again. Each new message makes
+the conversation longer, so the next call sends more input tokens. Eventually
+the conversation becomes too large to send in full; the context-selection
+chapter in [Advanced Agent Concepts](../../roadmap-intermediate.md) handles that
+by trimming the history.
 
 Press `Ctrl-D`, then continue without `--new`:
 
@@ -183,9 +188,9 @@ uv run --env-file .env levels/01-conversation/main.py --new
 Then ask for the current time:
 
 ```text
-you › whats the time in tokyo
+📝 you › whats the time in tokyo
 
-››› Tokyo time is **Japan Standard Time (JST, UTC+9)**. I can’t access a live clock, but you can check your device’s world clock for the current exact time.
+🤖 model › Tokyo time is **Japan Standard Time (JST, UTC+9)**. I can’t access a live clock, but you can check your device’s world clock for the current exact time.
 ```
 
 The model identifies the missing capability: it has no live clock. [Level 2](../02-tool/LESSON.md) gives it one.

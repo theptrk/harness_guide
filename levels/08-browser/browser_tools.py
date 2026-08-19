@@ -1,4 +1,4 @@
-"""Expose one persistent Playwright page as three model-callable tools."""
+"""Expose one persistent Playwright page as four model-callable tools."""
 
 import atexit
 import json
@@ -50,10 +50,35 @@ TOOLS = [
             "properties": {
                 "selector": {
                     "type": "string",
-                    "description": "A CSS selector such as #value.",
+                    "description": "A CSS selector for exactly one element.",
                 }
             },
             "required": ["selector"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "type_text",
+        "description": "Fill one text field and optionally press Enter.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "A CSS selector for one input or textarea.",
+                },
+                "text": {
+                    "type": "string",
+                    "description": "The text that replaces the field's current value.",
+                },
+                "press_enter": {
+                    "type": "boolean",
+                    "description": "Whether to press Enter after filling the field.",
+                },
+            },
+            "required": ["selector", "text", "press_enter"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -103,8 +128,23 @@ def _page_state(page: Page) -> str:
             .map(element => ({
                 tag: element.tagName.toLowerCase(),
                 ...(element.id ? {id: element.id} : {}),
+                ...(element.getAttribute("name")
+                    ? {name: element.getAttribute("name")}
+                    : {}),
+                ...(element.getAttribute("type")
+                    ? {type: element.getAttribute("type")}
+                    : {}),
                 ...(element.getAttribute("role")
                     ? {role: element.getAttribute("role")}
+                    : {}),
+                ...(element.getAttribute("placeholder")
+                    ? {placeholder: element.getAttribute("placeholder")}
+                    : {}),
+                ...(element.getAttribute("aria-label")
+                    ? {aria_label: element.getAttribute("aria-label")}
+                    : {}),
+                ...(element.getAttribute("href")
+                    ? {href: element.getAttribute("href")}
                     : {}),
                 visible_text: (element.innerText || element.value || "").trim(),
             }))"""
@@ -144,6 +184,21 @@ def open_page(target: str) -> str:
 def read_page() -> str:
     """Return the current shared page state."""
     return _page_state(_current_page())
+
+
+def type_text(selector: str, text: str, press_enter: bool) -> str:
+    """Fill one text field, optionally submit it, and return the new page state."""
+    page = _current_page()
+    matches = page.locator(selector)
+    count = matches.count()
+    if count != 1:
+        raise ValueError(f"selector must match exactly one element; matched {count}: {selector}")
+    matches.fill(text)
+    if press_enter:
+        matches.press("Enter")
+        page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(100)
+    return _page_state(page)
 
 
 def click(selector: str) -> str:

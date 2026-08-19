@@ -5,7 +5,7 @@
 Level 3 lets exceptions from a tool escape the agent loop. Give its clock an invalid timezone:
 
 ```text
-you › Use get_current_time with the timezone Mars/Olympus.
+📝 you › Use get_current_time with the timezone Mars/Olympus.
 
 tool › get_current_time({"timezone":"Mars/Olympus"})
 call failed: 'No time zone found with key Mars/Olympus'
@@ -33,12 +33,12 @@ uv run --env-file .env levels/04-harden/main.py --new
 Use the same invalid timezone:
 
 ```text
-you › Use get_current_time with the timezone Mars/Olympus. If it fails, explain the failure.
+📝 you › Use get_current_time with the timezone Mars/Olympus. If it fails, explain the failure.
 
 tool › get_current_time({"timezone":"Mars/Olympus"})
 tool ‹ {"error": {"type": "ZoneInfoNotFoundError", "message": "'No time zone found with key Mars/Olympus'"}}
 
-››› The request failed because `Mars/Olympus` is not a recognized IANA time zone. No current time could be retrieved.
+🤖 model › The request failed because `Mars/Olympus` is not a recognized IANA time zone. No current time could be retrieved.
 ```
 
 The tool still failed. The loop did not fail.

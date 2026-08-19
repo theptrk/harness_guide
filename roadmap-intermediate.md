@@ -1,156 +1,138 @@
-# Infinite Teammates — Intermediate companion
+# Series 2 — Advanced Agent Concepts
 
-This file names the deeper software concept behind each level in
-[roadmap.md](roadmap.md). It is not another implementation path.
+This series begins with the completed local harness from
+[Series 1](roadmap.md). Each chapter changes how the agent selects information,
+chooses capabilities, or organizes work.
 
-The beginner lessons show a mechanism directly. This companion connects that
-mechanism to ideas that appear in larger agent systems and other kinds of
-software.
-
-Levels 0–8 exist. Levels 9–19 are still planned.
+These chapters are planned, not implemented.
 
 ---
 
-## Part I — The loop
+## 01 · Hosted tools and web search
 
-### 00 · Representation layers
+The browser can search Google, but search-engine pages are unstable and may
+return CAPTCHAs. Add the Responses API's hosted web-search tool and keep the
+browser for interactive pages.
 
-The HTTP response, the SDK object, and helper properties are three views of the
-same result. Knowing which layer supplied a value makes it easier to change
-libraries, languages, or providers without treating convenience APIs as protocol
-fields.
+- **Concept** — A function tool executes in the local harness. A hosted tool
+  executes at the model provider. The same `tools` parameter can cross different
+  execution, privacy, and failure boundaries.
+- **Done when** — A public-information question returns cited sources without
+  opening Chromium.
 
-### 01 · Event log and projection
+## 02 · Context selection
 
-The conversation file is the durable record. The list sent to the model is a
-projection built from that record. This separation allows several views of the
-same history: full, trimmed, summarized, filtered, or rendered for a person.
+A conversation eventually exceeds the model's input limit. Build the model input
+from recent messages, pinned information, and summaries while preserving the
+complete event record.
 
-### 02 · Declarative capabilities
+- **Concept** — Stored history and model context are different views. Context is
+  selected for a particular call.
+- **Done when** — A long task crosses the configured threshold, summarizes old
+  material, and continues without losing its objective.
 
-A tool has an executable implementation and a description the model can reason
-about. The schema is a declarative interface: it says which capability exists
-without giving the model direct access to the function.
+## 03 · Evaluation
 
-### 03 · State machines
+Model behavior changes across runs, models, prompts, and tool descriptions. Add
+a fixed task set, automated checks where possible, model judges where necessary,
+and comparison reports.
 
-The agent loop can be described as states and transitions: waiting for a model,
-waiting for a tool, accepting a result, and finishing with an answer. The
-`while` loop is one implementation of that state machine.
+- **Concept** — One successful example is an observation, not evidence of a
+  reliable improvement.
+- **Done when** — A prompt or model change has measured effects on success rate,
+  latency, token use, tool calls, and cost.
 
-### 04 · Protocol invariants
+## 04 · Long-term memory and retrieval
 
-A function call and its output are a pair connected by `call_id`. A partial
-response is not interchangeable with a complete one. These are protocol
-invariants: conditions that must remain true regardless of how the surrounding
-program is organized.
+Search conversations that are not in the current context and maintain a small
+set of durable facts that should remain easy to retrieve.
 
-### 05 · Incremental display and canonical state
+- **Concept** — Storage, retrieval, and the policy deciding what to save or load
+  are separate mechanisms.
+- **Done when** — The agent answers a question using a relevant decision from an
+  older conversation and shows where it found it.
 
-Stream deltas are useful for immediate display, while the terminal response is
-the complete object used for later model input. One operation can therefore
-produce an incremental view and a canonical result without confusing the two.
+## 05 · OAuth and account connections
+
+Connect one account through OAuth, then expose a small set of account-specific
+tools. Gmail is a concrete example, not a required account for the series.
+
+- **Concept** — OAuth delegates limited authority without giving the model a
+  password. Scopes, access tokens, refresh tokens, expiry, and revocation define
+  that authority.
+- **Done when** — One connected account still works after its first access token
+  expires.
+
+## 06 · Tool and plugin discovery
+
+Replace the hardcoded tool assembly in `main.py` with components that declare
+their names, schemas, implementations, configuration, and account requirements.
+
+- **Concept** — Discovery lets the harness assemble capabilities from installed
+  components instead of editing one central registry.
+- **Done when** — Adding another integration requires changes only inside its own
+  component.
+
+## 07 · Multiple assistants
+
+Give separate assistants their own instructions, histories, memories, tools,
+accounts, and workspaces. Route each conversation to one assistant identity.
+
+- **Concept** — Isolation requires consistent identity across every stored object
+  and tool execution, not merely different system prompts.
+- **Done when** — Unrelated assistants cannot retrieve or act on one another's
+  context.
+
+## 08 · Model capability and reasoning budgets
+
+Repeat the same tool task with different models and reasoning settings. Measure
+whether the model discovers multi-step plans, recovers from errors, and uses the
+capabilities already present in the harness.
+
+- **Concept** — Harness capability determines what is possible. Model capability
+  affects whether the model can discover and execute the required sequence.
+- **Done when** — Model and reasoning choices are justified by evaluation
+  results rather than one impressive or disappointing run.
+
+## 09 · Tool-interface design
+
+Compare a general shell tool with dedicated file, browser, and search tools.
+Study how names, descriptions, argument shapes, return values, and plan length
+change model behavior.
+
+- **Concept** — A tool can expose an existing underlying capability while making
+  it easier for the model to discover, constrain, and verify.
+- **Done when** — A tool-interface change improves measured reliability without
+  silently expanding authority.
+
+## 10 · Human collaboration
+
+Study tasks that require private input, judgment, or physical action. Separate
+ordinary conversation from systems where a background agent and a person may
+control the same resource concurrently.
+
+- **Concept** — The synchronous CLI already supports an informal handoff because
+  the model stops and the browser remains open. Explicit ownership state matters
+  only when execution can continue concurrently or asynchronously.
+- **Done when** — The implementation adds coordination only where a demonstrated
+  concurrency or durability problem requires it.
+
+## 11 · Provider adapters and portable events
+
+Compare OpenAI function calls, hosted tools, and another provider's tool
+protocol. Define a small internal event model only after the differences are
+visible.
+
+- **Concept** — SDK objects are provider-specific representations. A portable
+  adapter should preserve information rather than pretending the protocols are
+  identical.
+- **Done when** — One harness can use two providers without losing tool-call,
+  streaming, refusal, or usage information.
 
 ---
 
-## Part II — The computer
+## Where to continue
 
-### 06 · Adapters and capability boundaries
-
-The model-facing file tools do not manipulate `Path` objects directly. They call
-a workspace adapter. That boundary separates what the agent can request from
-where and how the operation is implemented.
-
-### 07 · Delegated execution
-
-The model proposes a command, the harness asks a person, and the operating
-system executes only after approval. Capability, authorization, and execution
-belong to different actors even though they appear in one tool call.
-
----
-
-## Part III — The handoff
-
-### 08 · Multiple representations of a page
-
-A browser page can be represented as a DOM, accessibility tree, screenshot, or
-set of interaction targets. Each representation preserves different
-information. Browser agents work by choosing and combining those views.
-
-### 09 · Cooperative control
-
-Human takeover turns ownership into explicit state. The agent can be running,
-waiting, controlled by a person, or ready to resume. Human-in-the-loop software
-works better when waiting is a normal state rather than an exception.
-
----
-
-## Part IV — Reliability
-
-### 10 · Context as a selected view
-
-The conversation record and the model context are not the same thing. Trimming
-and summarization define a selected, sometimes lossy view of a larger record.
-Context management is therefore a policy about relevance, not only token count.
-
-### 11 · Empirical evaluation
-
-Model behavior is nondeterministic, so examples are observations rather than
-proofs. A scored test set turns prompt and model choices into hypotheses that
-can be compared across repeated runs.
-
----
-
-## Part V — Making it yours
-
-### 12 · Retrieval as a tool
-
-Long-term memory can use the same mechanism as time, files, and shell access:
-the model requests relevant information through a tool. Storage, retrieval, and
-the decision to retrieve remain separate concerns.
-
-### 13 · Delegated authority
-
-OAuth lets a program act with a limited portion of a user's authority without
-receiving the user's password. Scopes, access tokens, refresh tokens, and
-revocation describe how that delegation changes over time.
-
-### 14 · Discovery and composition
-
-A plugin system moves tool assembly from a hardcoded list to discovery.
-Integrations become components that describe their own tools and account
-requirements, while the core builds one combined capability set.
-
----
-
-## The fleet
-
-### 15 · Defense in depth
-
-Application checks and operating-system isolation are different boundaries.
-The workspace adapter limits normal file operations; a sandbox limits what
-happens when application logic is wrong or untrusted code runs.
-
-### 16 · Compute as a managed resource
-
-A cloud computer has a lifecycle independent of one process: provision, start,
-stop, persist, restore, and destroy. The agent uses compute through that
-lifecycle rather than assuming the current laptop always exists.
-
-### 17 · Namespaces and identity
-
-Separate assistants require more than different prompts. Their histories,
-memories, tools, accounts, workspaces, and machines need a consistent identity
-that follows every operation.
-
-### 18 · Durable workflows
-
-Background work separates a task from the request that started it. Checkpoints,
-leases, progress events, cancellation, and replay let another process continue
-the same logical job.
-
-### 19 · Feedback systems
-
-A service is observed and adjusted while it runs. Usage, failures, evaluations,
-user reports, and operational limits become feedback that changes models,
-prompts, tools, and policies over time.
+[Production Agent Systems](roadmap-production.md) begins when these mechanisms
+must operate safely for other users, survive failures, and run without constant
+supervision.
