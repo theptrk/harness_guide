@@ -3,8 +3,8 @@
 This series builds a local AI agent from a single model call through a tool-using
 agent loop with files, shell commands, and a browser.
 
-All nine levels are implemented. Each level has a runnable folder and a lesson
-that explains what changed from the previous level.
+All nine levels are implemented. Each level has a runnable folder under
+`series-1/` and a lesson that explains what changed from the previous level.
 
 The follow-on series are:
 
@@ -104,7 +104,8 @@ item as later model input. Record turn IDs so interrupted turns are excluded.
 ### 06 · Give it files
 
 Add `list_files`, `read_file`, `write_file`, and `edit_file`. Resolve every path
-inside `agent_workspace/` before touching the filesystem.
+inside `agent_workspace/` before touching the filesystem. `read_file` returns a
+line window, not the complete file.
 
 - **Learn** — Model-selected paths are untrusted input. Tool adapters keep the
   model-facing interface separate from filesystem implementation.
@@ -138,9 +139,9 @@ DOM content and interactive-element attributes into JSON tool results.
 ## Where to continue
 
 [Advanced Agent Concepts](roadmap-intermediate.md) starts after this harness
-works. It covers hosted tools, context selection, evaluation, memory, account
-connections, plugin discovery, multiple assistants, model capability, and
-provider boundaries.
+works. It covers hosted tools, context selection, evaluation, model capability,
+tool interfaces, memory, account connections, plugin discovery, multiple
+assistants, and provider boundaries.
 
 [Production Agent Systems](roadmap-production.md) covers the work required when
 the agent handles untrusted users, confidential data, concurrent tasks, durable

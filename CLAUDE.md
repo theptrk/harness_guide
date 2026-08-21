@@ -1,6 +1,7 @@
 # Infinite Teammates
 
-A tutorial that builds an agent from first principles, level by level, up to a Grokbot-like system.
+A tutorial that builds an agent from first principles. Series 1 implements a
+local harness. Series 2 and 3 plan advanced concepts and production systems.
 
 ## Writing
 

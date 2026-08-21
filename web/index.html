@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>New chat</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="chat-title">New chat</h1>
+        </div>
+        <button class="text-button" id="new-chat" type="button">New chat</button>
+      </header>
+
+      <main class="transcript" id="transcript" aria-live="polite"></main>
+
+      <footer class="dock">
+        <p class="disclaimer">The model can be wrong. Check important info.</p>
+        <form class="composer" id="composer">
+          <button class="icon-button" type="button" id="attach" title="Add files" aria-label="Add files" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="1"
+            placeholder="Ask anything"
+            autocomplete="off"
+            enterkeyhint="send"
+          ></textarea>
+          <div class="composer-end">
+            <button class="model-chip" type="button" id="model" title="Model">
+              <span>5.6 Luna</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 6l4 4 4-4" />
+              </svg>
+            </button>
+            <button class="icon-button" type="button" id="mic" title="Voice input" aria-label="Voice input" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8" />
+              </svg>
+            </button>
+            <button class="send" type="submit" id="send" title="Send" aria-label="Send" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 19V5M6 11l6-6 6 6" />
+              </svg>
+            </button>
+          </div>
+        </form>
+      </footer>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

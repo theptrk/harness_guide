@@ -7,9 +7,9 @@ introduction. Levels 0–8 build a model call into a local agent with persistenc
 tools, an agent loop, files, shell commands, and a browser.
 
 [**Series 2 — Advanced Agent Concepts**](roadmap-intermediate.md) plans the
-follow-on concepts: hosted tools, context selection, evaluation, memory, account
-connections, plugins, multiple assistants, model capability, and provider
-adapters.
+follow-on concepts: hosted tools, context selection, evaluation, model
+capability, tool interfaces, memory, account connections, plugins, multiple
+assistants, and provider adapters.
 
 [**Series 3 — Production Agent Systems**](roadmap-production.md) covers
 sandboxing, durable computers, background work, identity, secrets, concurrency,
@@ -19,15 +19,15 @@ The Series 1 lessons are the guide. Start here:
 
 | Level | | |
 |---|---|---|
-| 0 | [Call a model](levels/00-model/LESSON.md) | one file, one dependency |
-| 1 | [Hold a conversation](levels/01-conversation/LESSON.md) | …because it forgot your name |
-| 2 | [Give it one tool](levels/02-tool/LESSON.md) | …because it has no clock |
-| 3 | [Build the agent loop](levels/03-loop/LESSON.md) | …because one tool call was not enough |
-| 4 | [Harden the loop](levels/04-harden/LESSON.md) | …because tools and model calls fail |
-| 5 | [Stream it](levels/05-stream/LESSON.md) | …because the terminal stays blank while the model works |
-| 6 | [Give it files](levels/06-files/LESSON.md) | …because answer text cannot change a file |
-| 7 | [Run a command](levels/07-shell/LESSON.md) | …because it cannot run the code it writes |
-| 8 | [Use a browser](levels/08-browser/LESSON.md) | …because browser work otherwise requires shell automation |
+| 0 | [Call a model](series-1/00-model/LESSON.md) | one file, one dependency |
+| 1 | [Hold a conversation](series-1/01-conversation/LESSON.md) | …because it forgot your name |
+| 2 | [Give it one tool](series-1/02-tool/LESSON.md) | …because it has no clock |
+| 3 | [Build the agent loop](series-1/03-loop/LESSON.md) | …because one tool call was not enough |
+| 4 | [Harden the loop](series-1/04-harden/LESSON.md) | …because tools and model calls fail |
+| 5 | [Stream it](series-1/05-stream/LESSON.md) | …because the terminal stays blank while the model works |
+| 6 | [Give it files](series-1/06-files/LESSON.md) | …because answer text cannot change a file |
+| 7 | [Run a command](series-1/07-shell/LESSON.md) | …because it cannot run the code it writes |
+| 8 | [Use a browser](series-1/08-browser/LESSON.md) | …because browser work otherwise requires shell automation |
 
 ## How to use this
 
@@ -55,7 +55,7 @@ cp .env.example .env                              # then put your key in it
 `uv` installs the Python dependencies on the first run:
 
 ```sh
-uv run --env-file .env levels/00-model/main.py "why is the sky blue"
+uv run --env-file .env series-1/00-model/main.py "why is the sky blue"
 ```
 
 Alternatively, set `export UV_ENV_FILE=.env` once and you can drop the flag from every command.
@@ -68,10 +68,10 @@ uv run playwright install chromium
 
 ## How this is laid out
 
-One folder per level, each runnable on its own. Comparing two folders shows exactly what a feature cost:
+One folder per level under `series-1/`, each runnable on its own. Comparing two folders shows exactly what a feature cost:
 
 ```sh
-diff -ru levels/00-model levels/01-conversation
+diff -ru series-1/00-model series-1/01-conversation
 ```
 
 Built and tested with Python 3.13, `openai` 3.2.0, and Playwright 1.62.0.
