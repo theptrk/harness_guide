@@ -71,7 +71,7 @@ Level 1 stored message fields at the top level of each JSONL line. Level 2 store
 {"at": "...", "item": {"type": "function_call_output", "call_id": "call_...", "output": "..."}}
 ```
 
-The wrapper belongs to this program. `get_input_items()` removes it before calling the API.
+`at` is a local timestamp. `get_input_items()` returns only the items. That return value is what `responses.create(input=...)` accepts. The function is ours. The list is the API.
 
 ---
 

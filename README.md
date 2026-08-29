@@ -6,12 +6,12 @@ Building an AI agent harness from first principles, one level at a time.
 introduction. Levels 0–8 build a model call into a local agent with persistence,
 tools, an agent loop, files, shell commands, and a browser.
 
-[**Series 2 — Advanced Agent Concepts**](roadmap-intermediate.md) plans the
+**[DRAFT]** [**Series 2 — Advanced Agent Concepts**](roadmap-intermediate.md) plans the
 follow-on concepts: hosted tools, context selection, evaluation, model
 capability, tool interfaces, memory, account connections, plugins, multiple
 assistants, and provider adapters.
 
-[**Series 3 — Production Agent Systems**](roadmap-production.md) covers
+**[DRAFT]** [**Series 3 — Production Agent Systems**](roadmap-production.md) covers
 sandboxing, durable computers, background work, identity, secrets, concurrency,
 browser security, observability, quotas, deployment, and recovery.
 
@@ -28,6 +28,9 @@ The Series 1 lessons are the guide. Start here:
 | 6 | [Give it files](series-1/06-files/LESSON.md) | …because answer text cannot change a file |
 | 7 | [Run a command](series-1/07-shell/LESSON.md) | …because it cannot run the code it writes |
 | 8 | [Use a browser](series-1/08-browser/LESSON.md) | …because browser work otherwise requires shell automation |
+
+[`series-1-agent-class/`](series-1-agent-class/README.md) contains the same
+levels with an `Agent` class owning the model client and selected chat.
 
 ## How to use this
 
@@ -68,7 +71,9 @@ uv run playwright install chromium
 
 ## How this is laid out
 
-One folder per level under `series-1/`, each runnable on its own. Comparing two folders shows exactly what a feature cost:
+Each level is a folder under `series-1/`. You can run any level without the
+ones after it. Adjacent folders are complete copies, so a diff is the code
+that level added:
 
 ```sh
 diff -ru series-1/00-model series-1/01-conversation

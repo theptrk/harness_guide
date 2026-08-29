@@ -4,9 +4,9 @@ One file per conversation under chats/. One line per message, appended as it
 happens. Lines are not rewritten. The one deletion is an unsent user line when
 the call fails, so a retry isn't a second copy of a question that never landed.
 
-The list of messages you send to the model is *built from* this file. It is not
-the file. That distinction does nothing for you today. Later, context selection
-can send a shorter list while the file still holds every message.
+The list you pass to `responses.create(input=...)` is built from this file.
+That list is the API. The file is this program. Later, context selection can
+send a shorter `input` list while the file still holds every message.
 """
 
 import json
@@ -52,14 +52,12 @@ def drop_last(path: Path) -> None:
 
 
 def get_messages(path: Path) -> list[dict]:
-    """Build the list to send to the model, out of the file.
+    """Return the Responses `input` list stored in this file.
 
-    Right now this is every line in order. Context selection later starts from
-    the newest summary and reads forward. The callers won't change — only this
-    function will.
-
-    `at` stays on disk and is not sent. `phase` is sent when present — the
-    API asks that follow-up calls include it on assistant messages.
+    `role`, `content`, and `phase` are API fields. `at` is this program and
+    stays on disk. Right now this is every message in order. Context selection
+    later starts from the newest summary and reads forward. Callers still pass
+    the return value to `input=`.
     """
     out = []
     for line in path.read_text().splitlines():

@@ -11,23 +11,29 @@ tool › get_current_time({"timezone":"Mars/Olympus"})
 call failed: 'No time zone found with key Mars/Olympus'
 ```
 
-The model requested a function call, but the file contains no matching `function_call_output`. The turn cannot continue.
+The model requested a function call, but the active turn has no matching `function_call_output`. The turn cannot continue.
+
+The harness is the code around the model. That means the loop, the in-memory conversation, and the tool dispatch. It is not the model.
 
 Level 4 handles two classes of failure differently:
 
 - A tool failure becomes a `function_call_output`. The model can read it and decide what to do.
 - An expected API or harness failure stops the program with a short error. Another model call cannot repair an exhausted API retry budget or an incomplete response.
 
-Unexpected programming and persistence errors remain uncaught and produce a traceback. Hiding those errors would make the harness harder to debug.
+The invalid timezone isolates the first class. The same level also adds a tool-call cap, incomplete-response handling, client retries and timeout, and an optional `MAX_OUTPUT_TOKENS` limit.
 
-The prompt-reading loop in `main()` keeps the same shape. This level configures the API client and hardens the work inside `run_turn()`.
+Unexpected programming errors remain uncaught and produce a traceback. Hiding those errors would make the harness harder to debug.
+
+The prompt-reading loop in `main()` keeps the same shape.
+`Agent.__init__()` configures the API client, and this level hardens the work
+inside `run_turn()`. The loop still knows only `agent.handle_message(said)`.
 
 ---
 
 ## Run it
 
 ```sh
-uv run --env-file .env series-1/04-harden/main.py --new
+uv run --env-file .env series-1-agent-class/04-harden/main.py
 ```
 
 Use the same invalid timezone:
@@ -73,7 +79,7 @@ def run_tool(tool_call) -> str:
         return tool_error(type(error).__name__, str(error))
 ```
 
-This catches malformed JSON, a name missing from the registry, arguments that do not match the Python function, and exceptions raised by the function. It does not catch failures from the API call, history file, or rest of the loop.
+This catches malformed JSON, a name missing from the registry, arguments that do not match the Python function, and exceptions raised by the function. It does not catch failures from the API call or rest of the loop.
 
 The caller receives either the successful value or structured error in `tool_result`, then adds the matching output to the current turn:
 
@@ -89,14 +95,14 @@ turn_items.append(
 )
 ```
 
-On the next loop pass, `committed_items + turn_items` includes both API items:
+On the next loop pass, `input_items + turn_items` includes both API items:
 
 ```text
 function_call(call_123)
 function_call_output(call_123, error)
 ```
 
-The model can correct an argument, choose another tool, or explain the failure. When the turn finishes, both items are appended to the chat file with the rest of the turn.
+The model can correct an argument, choose another tool, or explain the failure. When the turn finishes, both items are appended to the in-memory conversation with the rest of the turn.
 
 This rule applies to a completed function call. If the model response ends while a function call is still incomplete, the harness does not replay or execute that partial call, so it does not add an output.
 
@@ -143,35 +149,34 @@ An HTTP request can succeed while the model response has:
 
 The other incomplete reason is `content_filter`.
 
-The chat file contains only completed turns. `run_turn()` reads that file once, then keeps the new request and its model and tool items in a separate list:
+The conversation list contains only completed turns. `run_turn()` keeps the new request and its model and tool items in a separate list:
 
 ```python
-committed_items = history.get_input_items(chat_file_path)
 turn_items = [{"role": "user", "content": said}]
 
 response = client.responses.create(
     # ...
-    input=committed_items + turn_items,
+    input=input_items + turn_items,
 )
 ```
 
-After each completed response, its output items join `turn_items`. Tool outputs join the same list. A later pass receives the committed conversation followed by everything that has happened in the active turn.
+After each completed response, its output items join `turn_items`. Tool outputs join the same list. A later pass receives the completed conversation followed by everything that has happened in the active turn.
 
 `require_complete(response)` runs before the response output is added. If the response is incomplete, it reads `incomplete_details.reason` for the terminal error and stops. The partial output and active turn are discarded. They are not conversation history.
 
 After the model returns a final answer, the whole turn is committed:
 
 ```python
-history.append_items(chat_file_path, turn_items)
+input_items.extend(turn_items)
 ```
 
-Every item in the JSONL file is therefore eligible for later model input. `history.py` does not filter debugging events because the chat file contains none.
+Every item in `input_items` is therefore eligible for later model input. Debugging events are printed, not added to the conversation.
 
 You can force the model to run out of output tokens:
 
 ```sh
 printf '%s\n' 'What time is it in Tokyo?' |
-  MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1/04-harden/main.py --new
+  MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1-agent-class/04-harden/main.py
 ```
 
 The program stopped with:
@@ -182,7 +187,7 @@ harness failed: model response incomplete: max_output_tokens; no tool from this 
 
 Executing that tool would require guessing the missing argument. Sending the identical model request again would use the same token cap. This level stops instead. A later design could raise the cap or continue partial answer text, but it must not execute a partial tool call.
 
-The new chat file remains empty because the failed turn never committed.
+The conversation remains unchanged because the failed turn never committed.
 
 Retrying after `content_filter` is also not useful without changing the request.
 
@@ -190,10 +195,10 @@ Retrying after `content_filter` is also not useful without changing the request.
 
 ## API retries and timeouts
 
-The client is configured explicitly:
+The agent configures its client when it is created:
 
 ```python
-client = OpenAI(max_retries=2, timeout=30.0)
+self.client = OpenAI(max_retries=2, timeout=30.0)
 ```
 
 The SDK retries connection failures, request timeouts, rate limits, and selected server errors. Two retries means at most three attempts. If those attempts fail, the API exception stops the program with a short error instead of entering another agent pass.
@@ -207,7 +212,7 @@ The 30-second API timeout does not stop a Python tool. `get_current_time()` perf
 1. Start a new conversation:
 
    ```sh
-   uv run --env-file .env series-1/04-harden/main.py --new
+   uv run --env-file .env series-1-agent-class/04-harden/main.py
    ```
 
 2. Enter `Use get_current_time with the timezone Mars/Olympus. If it fails, explain the failure.`
@@ -219,7 +224,7 @@ The 30-second API timeout does not stop a Python tool. `get_current_time()` perf
 
    ```sh
    printf '%s\n' 'Use get_current_time to tell me the current time in Tokyo.' |
-     MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1/04-harden/main.py --new
+     MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1-agent-class/04-harden/main.py
    ```
 
 8. Confirm that the program reports `model response incomplete: max_output_tokens` and no tool is executed from the partial function call.

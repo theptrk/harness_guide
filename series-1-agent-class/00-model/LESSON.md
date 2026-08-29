@@ -1,6 +1,8 @@
 # Level 0 — Call a model
 
-You send a question to a model and print what comes back. One file, one dependency, no framework.
+You create one `Agent`, send it a question, and print what comes back. One file,
+one dependency. `Agent` owns the OpenAI client. `main()` parses the question
+and calls `handle_message()`.
 
 This is the only level with nothing before it, so there's no "here's what broke" to open with. Everything after this one starts with something that doesn't work.
 
@@ -20,7 +22,7 @@ The call returns one object. Two ways to read it:
 Start with `--raw`:
 
 ```sh
-uv run --env-file .env series-1/00-model/main.py --raw "why is the sky blue"
+uv run --env-file .env series-1-agent-class/00-model/main.py --raw "why is the sky blue"
 ```
 
 `--env-file .env` loads `OPENAI_API_KEY` from `.env`. Without it, the program
@@ -36,20 +38,26 @@ To avoid repeating the flag, set the environment-file path once:
 export UV_ENV_FILE=.env
 ```
 
-Then `uv run series-1/00-model/main.py --raw "why is the sky blue"` is equivalent.
+Then `uv run series-1-agent-class/00-model/main.py --raw "why is the sky blue"` is equivalent.
 
-We use the OpenAI SDK
+The agent creates one OpenAI client:
 
 ```python
-client = OpenAI()
+class Agent:
+    def __init__(self):
+        self.client = OpenAI()
 
-response = client.responses.create(
-    model=MODEL,
-    instructions=SYSTEM_PROMPT,  # applies to every question
-    input=question,              # user input
-    reasoning={"effort": "none"},
-)
+    def handle_message(self, question, raw=False):
+        response = self.client.responses.create(
+            model=MODEL,
+            instructions=SYSTEM_PROMPT,  # applies to every question
+            input=question,              # user input
+            reasoning={"effort": "none"},
+        )
 ```
+
+`main()` reads the command-line arguments, creates `Agent()`, and calls
+`agent.handle_message(question, raw)`. It does not make the model request.
 
 That `--raw` flag makes the command print the output text twice:
 
@@ -66,7 +74,7 @@ A truncated sample of the JSON:
 
 ```json
 {
-  ... 
+  ...
   "created_at": 1786995481.0,
   "instructions": "You are a concise assistant. Answer in a few sentences.",
   "model": "gpt-5.6-luna",
@@ -120,7 +128,7 @@ reasoning effort is `medium`. The sample shows `0` reasoning tokens because
 
 `output` is a list of items. Each item has a `type`. This call returned one `message`. The item types this series uses:
 
-- `message`. Assistant text. Fields include `role`, `content`, `status`, and `phase`. `phase` is `final_answer` or `commentary`. When you send this message back on a later `input` list, you send `phase` with it.
+- `message`. Assistant text. Fields include `role`, `content`, `status`, and `phase`. A turn can return more than one assistant message. `phase` marks each one as `commentary` (a mid-turn update, such as what it will do next) or `final_answer` (the answer for this turn). When you put that message on a later `input` list, you send `phase` with it.
 - `function_call`. The model wants a function run. Fields include `name`, `arguments`, and `call_id`.
 - `function_call_output`. Your function result. Same `call_id`, plus `output`. This type is something you put on `input`. It does not arrive in `output`.
 
@@ -139,7 +147,7 @@ uv run python -c "import inspect; from openai.types.responses import Response; p
 Now run it without the flag:
 
 ```sh
-uv run --env-file .env series-1/00-model/main.py "why is the sky blue"
+uv run --env-file .env series-1-agent-class/00-model/main.py "why is the sky blue"
 ```
 
 The model's answer prints first. The usage line follows:
@@ -155,15 +163,15 @@ Same call. The difference is only how much of the response you chose to look at.
 ## What's in here
 
 ```
-series-1/00-model/
+series-1-agent-class/00-model/
   LESSON.md    this file
-  main.py      the whole program
+  main.py      Agent and the command-line entry point
 ```
 
 The core of the code is this call:
 
 ```python
-response = client.responses.create(
+response = self.client.responses.create(
     model=MODEL,
     instructions=SYSTEM_PROMPT,
     input=question,
@@ -171,13 +179,19 @@ response = client.responses.create(
 )
 ```
 
-`MODEL`, `SYSTEM_PROMPT`, and `question` are defined earlier in `main.py`. `question` comes from the command-line argument.
+`MODEL` and `SYSTEM_PROMPT` are defined earlier in `main.py`. `question` is the
+message passed to `Agent.handle_message()`.
 
 ---
 
-## The three things worth taking from this
+## What this level adds
 
-**The key lives in the environment, not the code.** `OpenAI()` reads `OPENAI_API_KEY` on its own. You never pass it in, never assign it to a variable, never let it near a file you might commit.
+**`Agent` owns the client.** `main()` only parses argv and calls
+`handle_message()`. Later levels keep that split.
+
+**The key lives in the environment, not the code.** `Agent.__init__()` calls
+`OpenAI()`, which reads `OPENAI_API_KEY` on its own. You never pass it in, never
+assign it to a variable, never let it near a file you might commit.
 
 **You send two pieces of text, and they have different jobs.** `instructions`
 is the system prompt — it applies to every question you'll ever ask. `input` is
@@ -201,7 +215,7 @@ and measures what happens.
 
 1. Run:
   ```sh
-   uv run --env-file .env series-1/00-model/main.py --raw "Why is the sky blue?"
+   uv run --env-file .env series-1-agent-class/00-model/main.py --raw "Why is the sky blue?"
   ```
 2. Confirm that the terminal shows:
   - A raw response containing `output`, `usage`, `model`, and `status`.
@@ -215,14 +229,14 @@ and measures what happens.
 Try holding a conversation:
 
 ```sh
-uv run --env-file .env series-1/00-model/main.py "My name is Patrick."
-uv run --env-file .env series-1/00-model/main.py "What is my name?"
+uv run --env-file .env series-1-agent-class/00-model/main.py "My name is Patrick."
+uv run --env-file .env series-1-agent-class/00-model/main.py "What is my name?"
 ```
 
 It has no idea. Two separate calls, and the model kept nothing between them.
 
 ```text
-$ uv run --env-file .env series-1/00-model/main.py "What is my name?"
+$ uv run --env-file .env series-1-agent-class/00-model/main.py "What is my name?"
 I don’t know your name—you haven’t shared it with me.
 ```
 

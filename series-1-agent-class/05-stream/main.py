@@ -1,7 +1,6 @@
 """Level 5 — stream model text and exclude unfinished turns.
 
-    uv run --env-file .env series-1/05-stream/main.py
-    uv run --env-file .env series-1/05-stream/main.py --new
+    uv run --env-file .env series-1-agent-class/05-stream/main.py
 """
 
 import json
@@ -12,7 +11,6 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
 
-import history
 
 MODEL = "gpt-5.6-luna"
 SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
@@ -176,9 +174,8 @@ def stream_response(
     return final_response, text_started
 
 
-def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -> None:
+def run_turn(client, input_items: list[dict], said: str, max_output_tokens: int | None) -> None:
     """Run one user request until the model returns an answer."""
-    committed_items = history.get_input_items(chat_file_path)
     turn_items = [{"role": "user", "content": said}]
     model_calls = 0
     tool_calls = 0
@@ -192,7 +189,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
             response, text_was_streamed = stream_response(
                 client,
                 model_calls,
-                committed_items + turn_items,
+                input_items + turn_items,
                 force_answer,
                 max_output_tokens,
             )
@@ -244,36 +241,44 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
     except HarnessError as error:
         sys.exit(f"harness failed: {error}")
 
-    history.append_items(chat_file_path, turn_items)
+    input_items.extend(turn_items)
     print(
         f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
         f" · {input_tokens} in + {output_tokens} out]\n"
     )
 
 
+class Agent:
+    """One configured model client and one conversation."""
+
+    def __init__(self):
+        if not os.getenv("OPENAI_API_KEY"):
+            sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+        try:
+            self.max_output_tokens = configured_output_limit()
+        except HarnessError as error:
+            sys.exit(f"harness failed: {error}")
+
+        self.client = OpenAI(max_retries=API_RETRIES, timeout=API_TIMEOUT_SECONDS)
+        self.input_items = []
+        print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
+
+    def handle_message(self, said: str) -> None:
+        """Run one user request until the model returns an answer."""
+        run_turn(
+            self.client,
+            self.input_items,
+            said,
+            self.max_output_tokens,
+        )
+
+
 def main() -> None:
-    if not os.getenv("OPENAI_API_KEY"):
-        sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
-
-    try:
-        max_output_tokens = configured_output_limit()
-    except HarnessError as error:
-        sys.exit(f"harness failed: {error}")
-
-    client = OpenAI(max_retries=API_RETRIES, timeout=API_TIMEOUT_SECONDS)
-
-    if "--new" in sys.argv:
-        chat_file_path = history.new_chat()
-    else:
-        chat_file_path = history.latest_chat() or history.new_chat()
-
-    input_items = history.get_input_items(chat_file_path)
-    print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
-    print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
+    agent = Agent()
 
     while True:
         try:
-                said = input("📝 you › ").strip()
+            said = input("📝 you › ").strip()
         except EOFError:
             print()
             break
@@ -284,7 +289,7 @@ def main() -> None:
             continue
 
         try:
-            run_turn(client, chat_file_path, said, max_output_tokens)
+            agent.handle_message(said)
         except KeyboardInterrupt:
             break
 

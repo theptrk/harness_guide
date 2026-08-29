@@ -99,24 +99,6 @@ def configured_output_limit() -> int | None:
     return limit
 
 
-def save_response(chat_file_path, response) -> None:
-    """Save output, but exclude incomplete output from the next API input."""
-    append_item = (
-        history.append_api_item
-        if response.status == "completed"
-        else history.append_incomplete_item
-    )
-    for output_item in response.output:
-        append_item(
-            chat_file_path,
-            output_item.model_dump(mode="json", exclude_none=True),
-        )
-    outcome = {"status": response.status}
-    if response.incomplete_details is not None:
-        outcome["incomplete_reason"] = response.incomplete_details.reason
-    history.append_event(chat_file_path, "model_call_finished", **outcome)
-
-
 def require_complete(response) -> None:
     """Reject output that is unsafe to execute or include in later model input."""
     if response.status == "completed":
@@ -146,11 +128,8 @@ def response_text(response) -> str:
 
 def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -> None:
     """Run one user request until the model returns an answer."""
-    history.append_api_item(
-        chat_file_path,
-        {"role": "user", "content": said},
-    )
-    only_user_item_written = True
+    committed_items = history.get_input_items(chat_file_path)
+    turn_items = [{"role": "user", "content": said}]
     model_calls = 0
     tool_calls = 0
     input_tokens = 0
@@ -159,7 +138,6 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
 
     try:
         while True:
-            input_items = history.get_input_items(chat_file_path)
             request_options = {}
             if max_output_tokens is not None:
                 request_options["max_output_tokens"] = max_output_tokens
@@ -167,20 +145,22 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
             response = client.responses.create(
                 model=MODEL,
                 instructions=SYSTEM_PROMPT,
-                input=input_items,
+                input=committed_items + turn_items,
                 tools=TOOLS,
                 tool_choice="none" if force_answer else "auto",
                 parallel_tool_calls=False,
                 reasoning={"effort": "none"},
                 **request_options,
             )
-            save_response(chat_file_path, response)
-            only_user_item_written = False
             model_calls += 1
             if response.usage is not None:
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
             require_complete(response)
+            turn_items.extend(
+                item.model_dump(mode="json", exclude_none=True)
+                for item in response.output
+            )
 
             tool_call = next(
                 (item for item in response.output if item.type == "function_call"),
@@ -204,25 +184,21 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
                 tool_calls += 1
             print(f"tool ‹ {tool_result}")
 
-            history.append_api_item(
-                chat_file_path,
+            turn_items.append(
                 {
                     "type": "function_call_output",
                     "call_id": tool_call.call_id,
                     "output": tool_result,
-                },
+                }
             )
     except KeyboardInterrupt:
-        if only_user_item_written:
-            history.drop_last_item(chat_file_path)
         raise
     except OpenAIError as error:
-        if only_user_item_written:
-            history.drop_last_item(chat_file_path)
         sys.exit(f"API failed after retries: {error}")
     except HarnessError as error:
         sys.exit(f"harness failed: {error}")
 
+    history.append_items(chat_file_path, turn_items)
     print(f"\n🤖 model › {answer}")
     print(
         f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
@@ -248,7 +224,7 @@ def main() -> None:
 
     input_items = history.get_input_items(chat_file_path)
     print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
-    print("Ctrl-D to leave. Every API item is saved.\n")
+    print("Ctrl-D to leave. Completed turns are saved.\n")
 
     while True:
         try:

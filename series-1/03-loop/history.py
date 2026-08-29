@@ -1,4 +1,8 @@
-"""Persist every Responses API item as an append-only JSONL event."""
+"""Append-only JSONL store of Responses API items.
+
+Each line wraps one API item with a local timestamp. The API never sees the
+wrapper. `get_input_items()` returns the `input` list.
+"""
 
 import json
 from datetime import datetime
@@ -41,7 +45,11 @@ def drop_last_item(path: Path) -> None:
 
 
 def get_input_items(path: Path) -> list[dict]:
-    """Build API input from the complete event log."""
+    """Return the Responses API `input` list stored in this file.
+
+    Each JSONL line is local (`at` plus an `item`). The return value is only
+    the items. That list is what `responses.create(input=...)` accepts.
+    """
     items = []
     for line in path.read_text().splitlines():
         if not line.strip():

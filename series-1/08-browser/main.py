@@ -8,7 +8,6 @@ import json
 import os
 import sys
 from datetime import datetime
-from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
@@ -134,33 +133,6 @@ def configured_output_limit() -> int | None:
     return limit
 
 
-def save_response(chat_file_path, turn_id: str, response, model_call: int) -> None:
-    """Save canonical output, excluding incomplete items from later model input."""
-    append_item = (
-        history.append_api_item
-        if response.status == "completed"
-        else history.append_incomplete_item
-    )
-    for output_item in response.output:
-        append_item(
-            chat_file_path,
-            turn_id,
-            output_item.model_dump(mode="json", exclude_none=True),
-        )
-    outcome = {
-        "model_call": model_call,
-        "status": response.status,
-    }
-    if response.incomplete_details is not None:
-        outcome["incomplete_reason"] = response.incomplete_details.reason
-    history.append_event(
-        chat_file_path,
-        turn_id,
-        "model_call_finished",
-        **outcome,
-    )
-
-
 def require_complete(response) -> None:
     """Reject output that is unsafe to execute or include in later model input."""
     if response.status == "completed":
@@ -190,8 +162,6 @@ def response_text(response) -> str:
 
 def stream_response(
     client,
-    chat_file_path,
-    turn_id: str,
     model_call: int,
     input_items: list[dict],
     force_answer: bool,
@@ -202,12 +172,6 @@ def stream_response(
     if max_output_tokens is not None:
         request_options["max_output_tokens"] = max_output_tokens
 
-    history.append_event(
-        chat_file_path,
-        turn_id,
-        "model_started",
-        model_call=model_call,
-    )
     print(f"\n[model call {model_call} started]", flush=True)
 
     final_response = None
@@ -248,13 +212,8 @@ def stream_response(
 
 def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -> None:
     """Run one user request until the model returns an answer."""
-    turn_id = uuid4().hex
-    history.append_event(chat_file_path, turn_id, "turn_started")
-    history.append_api_item(
-        chat_file_path,
-        turn_id,
-        {"role": "user", "content": said},
-    )
+    committed_items = history.get_input_items(chat_file_path)
+    turn_items = [{"role": "user", "content": said}]
     model_calls = 0
     tool_calls = 0
     input_tokens = 0
@@ -263,25 +222,22 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
 
     try:
         while True:
-            input_items = history.get_input_items(
-                chat_file_path,
-                active_turn_id=turn_id,
-            )
             model_calls += 1
             response, text_was_streamed = stream_response(
                 client,
-                chat_file_path,
-                turn_id,
                 model_calls,
-                input_items,
+                committed_items + turn_items,
                 force_answer,
                 max_output_tokens,
             )
-            save_response(chat_file_path, turn_id, response, model_calls)
             if response.usage is not None:
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
             require_complete(response)
+            turn_items.extend(
+                item.model_dump(mode="json", exclude_none=True)
+                for item in response.output
+            )
 
             tool_call = next(
                 (item for item in response.output if item.type == "function_call"),
@@ -306,48 +262,23 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
                 tool_result = run_tool(tool_call)
                 tool_calls += 1
 
-            history.append_api_item(
-                chat_file_path,
-                turn_id,
+            turn_items.append(
                 {
                     "type": "function_call_output",
                     "call_id": tool_call.call_id,
                     "output": tool_result,
-                },
+                }
             )
             print(f"tool ‹ {display_tool_result(tool_result)}")
     except KeyboardInterrupt:
-        history.append_event(chat_file_path, turn_id, "turn_interrupted")
         print("\n[turn interrupted]")
         raise
     except OpenAIError as error:
-        history.append_event(
-            chat_file_path,
-            turn_id,
-            "turn_failed",
-            error_type=type(error).__name__,
-            message=str(error),
-        )
         sys.exit(f"API failed after retries: {error}")
     except HarnessError as error:
-        history.append_event(
-            chat_file_path,
-            turn_id,
-            "turn_failed",
-            error_type=type(error).__name__,
-            message=str(error),
-        )
         sys.exit(f"harness failed: {error}")
 
-    history.append_event(
-        chat_file_path,
-        turn_id,
-        "turn_completed",
-        model_calls=model_calls,
-        tool_calls=tool_calls,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    )
+    history.append_items(chat_file_path, turn_items)
     print(
         f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
         f" · {input_tokens} in + {output_tokens} out]\n"

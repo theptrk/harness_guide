@@ -1,7 +1,6 @@
-"""Level 5 — stream model text and exclude unfinished turns.
+"""Level 7 — run approved shell commands from the confined workspace.
 
-    uv run --env-file .env series-1/05-stream/main.py
-    uv run --env-file .env series-1/05-stream/main.py --new
+    uv run --env-file .env series-1-agent-class/07-shell/main.py
 """
 
 import json
@@ -12,33 +11,40 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI, OpenAIError
 
-import history
+import file_tools
+import shell_tools
 
 MODEL = "gpt-5.6-luna"
-SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
+SYSTEM_PROMPT = (
+    "You are a concise coding assistant. Use the tools to inspect and modify files "
+    "and run commands in your workspace. Every shell command requires approval. "
+    "A denied command is a final decision: "
+    "do not request the same denied action again unless the person explicitly asks. "
+    "Do not claim an action succeeded unless its tool result says it did."
+)
 TOOL_CALL_LIMIT = 5
 API_RETRIES = 2
 API_TIMEOUT_SECONDS = 30.0
 
-TOOLS = [
-    {
-        "type": "function",
-        "name": "get_current_time",
-        "description": "Get the current date and time in a specific timezone.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timezone": {
-                    "type": "string",
-                    "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
-                }
-            },
-            "required": ["timezone"],
-            "additionalProperties": False,
+TIME_TOOL = {
+    "type": "function",
+    "name": "get_current_time",
+    "description": "Get the current date and time in a specific timezone.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "timezone": {
+                "type": "string",
+                "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
+            }
         },
-        "strict": True,
-    }
-]
+        "required": ["timezone"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+TOOLS = [TIME_TOOL] + file_tools.TOOLS + [shell_tools.RUN_COMMAND_TOOL]
 
 
 class HarnessError(RuntimeError):
@@ -58,6 +64,11 @@ def get_current_time(timezone: str) -> str:
 
 TOOL_FUNCTIONS = {
     "get_current_time": get_current_time,
+    "list_files": file_tools.list_files,
+    "read_file": file_tools.read_file,
+    "write_file": file_tools.write_file,
+    "edit_file": file_tools.edit_file,
+    "run_command": shell_tools.run_command,
 }
 
 
@@ -176,9 +187,8 @@ def stream_response(
     return final_response, text_started
 
 
-def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -> None:
+def run_turn(client, input_items: list[dict], said: str, max_output_tokens: int | None) -> None:
     """Run one user request until the model returns an answer."""
-    committed_items = history.get_input_items(chat_file_path)
     turn_items = [{"role": "user", "content": said}]
     model_calls = 0
     tool_calls = 0
@@ -192,7 +202,7 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
             response, text_was_streamed = stream_response(
                 client,
                 model_calls,
-                committed_items + turn_items,
+                input_items + turn_items,
                 force_answer,
                 max_output_tokens,
             )
@@ -244,36 +254,45 @@ def run_turn(client, chat_file_path, said: str, max_output_tokens: int | None) -
     except HarnessError as error:
         sys.exit(f"harness failed: {error}")
 
-    history.append_items(chat_file_path, turn_items)
+    input_items.extend(turn_items)
     print(
         f"    [{model_calls} model call(s) · {tool_calls} tool call(s)"
         f" · {input_tokens} in + {output_tokens} out]\n"
     )
 
 
+class Agent:
+    """One configured model client and one conversation."""
+
+    def __init__(self):
+        if not os.getenv("OPENAI_API_KEY"):
+            sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+        try:
+            self.max_output_tokens = configured_output_limit()
+        except HarnessError as error:
+            sys.exit(f"harness failed: {error}")
+
+        self.client = OpenAI(max_retries=API_RETRIES, timeout=API_TIMEOUT_SECONDS)
+        self.input_items = []
+        print("[workspace: series-1-agent-class/07-shell/agent_workspace]")
+        print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
+
+    def handle_message(self, said: str) -> None:
+        """Run one user request until the model returns an answer."""
+        run_turn(
+            self.client,
+            self.input_items,
+            said,
+            self.max_output_tokens,
+        )
+
+
 def main() -> None:
-    if not os.getenv("OPENAI_API_KEY"):
-        sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
-
-    try:
-        max_output_tokens = configured_output_limit()
-    except HarnessError as error:
-        sys.exit(f"harness failed: {error}")
-
-    client = OpenAI(max_retries=API_RETRIES, timeout=API_TIMEOUT_SECONDS)
-
-    if "--new" in sys.argv:
-        chat_file_path = history.new_chat()
-    else:
-        chat_file_path = history.latest_chat() or history.new_chat()
-
-    input_items = history.get_input_items(chat_file_path)
-    print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
-    print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
+    agent = Agent()
 
     while True:
         try:
-                said = input("📝 you › ").strip()
+            said = input("📝 you › ").strip()
         except EOFError:
             print()
             break
@@ -284,7 +303,7 @@ def main() -> None:
             continue
 
         try:
-            run_turn(client, chat_file_path, said, max_output_tokens)
+            agent.handle_message(said)
         except KeyboardInterrupt:
             break
 

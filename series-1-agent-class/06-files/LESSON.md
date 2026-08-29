@@ -38,12 +38,12 @@ The prompt tells the model when to use the new capability. The tool result remai
 Every operation is confined to:
 
 ```text
-series-1/06-files/agent_workspace/
+series-1-agent-class/06-files/agent_workspace/
 ```
 
 `agent_workspace` is an ordinary directory beside this level's code. The program
 creates it when a file tool first runs. Tool paths are relative to it, so
-`profile.md` means `series-1/06-files/agent_workspace/profile.md`. Each level has
+`profile.md` means `series-1-agent-class/06-files/agent_workspace/profile.md`. Each level has
 its own `agent_workspace`.
 
 ---
@@ -51,13 +51,13 @@ its own `agent_workspace`.
 ## Run it
 
 ```sh
-uv run --env-file .env series-1/06-files/main.py --new
+uv run --env-file .env series-1-agent-class/06-files/main.py
 ```
 
 The startup text names the only directory the tools can access:
 
 ```text
-[workspace: series-1/06-files/agent_workspace]
+[workspace: series-1-agent-class/06-files/agent_workspace]
 ```
 
 Ask:
@@ -84,7 +84,7 @@ The `content` argument shows exactly what the model asked Python to write. Compa
 Press `Ctrl-D` and start a separate conversation:
 
 ```sh
-uv run --env-file .env series-1/06-files/main.py --new
+uv run --env-file .env series-1-agent-class/06-files/main.py
 ```
 
 First ask without letting it inspect the workspace:
@@ -121,7 +121,12 @@ Verify the edit:
 
 ## From a tool request to the filesystem
 
-The CLI and agent loops are the same as Level 5. Level 6 adds entries to the tool list and function registry used by the clock:
+The CLI and agent loops are the same as Level 5. `main()` still calls only
+`agent.handle_message(said)`. Level 6 adds entries to the tool list and function
+registry used by the clock:
+
+Levels 2 through 5 wrote the clock schema inline in a list named `TOOLS`. This
+level names that schema `TIME_TOOL` so it can sit next to `file_tools.TOOLS`.
 
 ```python
 TOOLS = [TIME_TOOL] + file_tools.TOOLS
@@ -253,7 +258,7 @@ Replacing one exact block requires less model-generated argument text than sendi
 ## The result is a window, not the file
 
 `read_file` does not return the file. It returns a JSON window of at most 200
-lines. That window is what the terminal prints, what the JSONL file stores, and
+lines. That window is what the terminal prints, what the in-memory item list stores, and
 what the next model call receives.
 
 The model sees this definition:
@@ -345,7 +350,7 @@ The retrieval is manual in this level: the user explicitly asks the model to rea
 1. Start Level 6:
 
    ```sh
-   uv run --env-file .env series-1/06-files/main.py --new
+   uv run --env-file .env series-1-agent-class/06-files/main.py
    ```
 
 2. Enter:
@@ -365,7 +370,7 @@ The retrieval is manual in this level: the user explicitly asks the model to rea
 5. Press `Ctrl-D`, then start a new conversation:
 
    ```sh
-   uv run --env-file .env series-1/06-files/main.py --new
+   uv run --env-file .env series-1-agent-class/06-files/main.py
    ```
 
 6. Confirm that the header reports `0 input items so far`.

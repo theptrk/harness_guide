@@ -4,11 +4,14 @@
 
 Level 4 prints nothing from a model call until the complete response arrives. Ask for several paragraphs and the terminal stays unchanged while the model generates all of them.
 
-Level 5 prints each text fragment as the API sends it. After the stream ends, it stores the complete response item for the next model call.
+Level 5 prints each text fragment as the API sends it. After the stream ends, it retains the complete response item for the next model call.
 
-As in Level 4, the active turn stays in memory and reaches the chat file only after the model returns a final answer.
+As in Level 4, the active turn stays in memory and reaches the in-memory conversation only after the model returns a final answer.
 
-The CLI loop in `main()` still reads one terminal message and passes it to `run_turn()`. This level changes how `run_turn()` receives and records the model response.
+The CLI loop in `main()` still reads one terminal message and passes it to
+`agent.handle_message()`. The agent supplies its client and in-memory conversation to
+`run_turn()`. This level changes how `run_turn()` receives and records the model
+response.
 
 ---
 
@@ -17,14 +20,10 @@ The CLI loop in `main()` still reads one terminal message and passes it to `run_
 Start the agent:
 
 ```sh
-uv run --env-file .env series-1/05-stream/main.py --new
+uv run --env-file .env series-1-agent-class/05-stream/main.py
 ```
 
-It prints the new chat filename and waits:
-
-```text
-[2026-08-18-122432-278577.jsonl · 0 input items so far]
-```
+It waits for a message.
 
 Ask for enough text to see it arrive:
 
@@ -128,26 +127,25 @@ turn_items.extend(
 The next model call receives that complete item, not the fragments that appeared in the terminal:
 
 ```python
-input=committed_items + turn_items
+input=input_items + turn_items
 ```
 
 ---
 
-## Interrupted turns never reach the chat file
+## Interrupted turns never reach the in-memory conversation
 
 `run_turn()` starts with two lists:
 
 ```python
-committed_items = history.get_input_items(chat_file_path)
 turn_items = [{"role": "user", "content": said}]
 ```
 
-`committed_items` came from the chat file. `turn_items` exists only in this call to `run_turn()`. Each model pass receives both lists, so tool requests and results remain available inside the agent loop without being persisted yet.
+`input_items` is the completed conversation. `turn_items` exists only in this call to `run_turn()`. Each model pass receives both lists, so tool requests and results remain available inside the agent loop before the turn is committed.
 
 After a final answer, one call commits the turn:
 
 ```python
-history.append_items(chat_file_path, turn_items)
+input_items.extend(turn_items)
 ```
 
 To see that behavior, ask for a response long enough to interrupt:
@@ -156,7 +154,7 @@ To see that behavior, ask for a response long enough to interrupt:
 📝 you › Write the numbers 1 through 200, one per line.
 ```
 
-Press `Ctrl-C` after some numbers appear. The fragments remain only in that terminal. `append_items()` was never called, so restarting `main.py` reads an unchanged chat file.
+Press `Ctrl-C` after some numbers appear. The fragments remain only in that terminal. `input_items.extend()` is never reached, so the active conversation remains unchanged.
 
 The SDK can retry some failures before a stream begins. Once output has arrived, this harness does not repeat the model call: doing so could duplicate visible text or tool work.
 
@@ -167,25 +165,13 @@ The SDK can retry some failures before a stream begins. Once output has arrived,
 1. Start a new conversation:
 
    ```sh
-   uv run --env-file .env series-1/05-stream/main.py --new
+   uv run --env-file .env series-1-agent-class/05-stream/main.py
    ```
 
 2. Enter `Explain in six short bullet points how UTC offsets work.`
 3. Confirm that answer text appears before the usage line.
-4. Press `Ctrl-D`, then start another new conversation:
-
-   ```sh
-   uv run --env-file .env series-1/05-stream/main.py --new
-   ```
-
-5. Enter `Write the numbers 1 through 200, one per line.` Press `Ctrl-C` after several numbers appear.
-6. Restart without `--new`:
-
-   ```sh
-   uv run --env-file .env series-1/05-stream/main.py
-   ```
-
-7. Confirm that the startup header reports `0 input items so far`. None of the interrupted turn is included in later model input.
+4. Enter `Write the numbers 1 through 200, one per line.` Press `Ctrl-C` after several numbers appear.
+5. Confirm in the code that `input_items.extend(turn_items)` is reached only after a final answer. None of the interrupted turn is included in later model input.
 
 ---
 
