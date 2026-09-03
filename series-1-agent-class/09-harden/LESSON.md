@@ -10,7 +10,8 @@ and adds cross-cutting failure policy around the model API:
 - an optional `MAX_OUTPUT_TOKENS` setting places a bound on model output;
 - every terminal response is checked before any returned tool call is executed;
 - terminal answer extraction handles both normal text and refusals;
-- expected API and harness failures stop with a short, explicit message.
+- expected API and harness failures raise out of the agent; `main()` prints a
+  short message and exits.
 
 Tool-call limits and model-readable tool errors were introduced with the agent
 loop, where those behaviors first became necessary. They remain in this final
@@ -32,13 +33,11 @@ uv run --env-file .env series-1-agent-class/09-harden/main.py
 
 ## Retry and timeout policy
 
-The agent configures the client once:
+`main()` configures the client once and hands it to the agent:
 
 ```python
-self.client = OpenAI(
-    max_retries=API_RETRIES,
-    timeout=API_TIMEOUT_SECONDS,
-)
+client = OpenAI(max_retries=API_RETRIES, timeout=API_TIMEOUT_SECONDS)
+agent = Agent(client, browser, chat_file_path, emit=..., approve=..., max_output_tokens=...)
 ```
 
 The retry setting applies to transient API failures handled by the SDK. The API
@@ -121,7 +120,9 @@ a readable string so the model can correct an argument or explain the problem:
 ```python
 try:
     arguments = json.loads(tool_call.arguments)
-    tool_function = TOOL_FUNCTIONS[tool_call.name]
+    tool_function = self.tool_functions.get(tool_call.name)
+    if tool_function is None:
+        raise LookupError(f"unknown tool: {tool_call.name}")
     return tool_function(**arguments)
 except Exception as error:
     return f"{type(error).__name__}: {error}"
@@ -130,6 +131,29 @@ except Exception as error:
 The executed-tool budget also remains in force. Once the budget is exhausted,
 the loop returns a `ToolCallLimit` result and makes the next request with
 `tool_choice="none"`.
+
+## The agent raises, main() decides
+
+`handle_message()` does not catch `OpenAIError` or `HarnessError`. Both leave
+the method, and nothing from that turn reaches the chat file. `main()` catches
+them and exits:
+
+```python
+try:
+    agent.handle_message(said)
+except OpenAIError as error:
+    sys.exit(f"API failed after retries: {error}")
+except HarnessError as error:
+    sys.exit(f"harness failed: {error}")
+```
+
+Ending the process is the terminal's policy. A host that serves many
+conversations would report the error and keep running. The agent does not
+know which host it has.
+
+`MAX_OUTPUT_TOKENS` is read by `configured_output_limit()` in `main()` and
+passed to `Agent` as `max_output_tokens`. The agent reads no environment
+variables.
 
 ## Done when
 

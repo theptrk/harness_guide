@@ -66,11 +66,16 @@ dictionary that can be sent back through `input` on the next call.
 The code retains API items rather than rebuilding a transcript from displayed
 text. Later levels add function calls and function results to this same list.
 
+`handle_message()` returns the response. `main()` prints the answer and the
+token counts, and prints the raw output items when `--raw` is set. The agent
+has no `print()` in it.
+
 ## Failure behavior
 
 If the API call fails or is interrupted, the user item has not been appended.
 The next message therefore cannot include a request that never received a
-completed response.
+completed response. The exception reaches `main()`, which prints `call failed`
+and waits for the next line.
 
 ## Context grows
 

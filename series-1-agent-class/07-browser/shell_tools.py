@@ -29,19 +29,6 @@ RUN_COMMAND_TOOL = {
 }
 
 
-def request_approval(command: str, ask: Callable[[str], str] = input) -> bool:
-    """Show the exact command. Empty or unrecognized input means no."""
-    try:
-        answer = ask(
-            f"\n[approval required]\n"
-            f"Command: {command}\n"
-            "Run it? Type yes to continue [y/N]: "
-        )
-    except (EOFError, KeyboardInterrupt):
-        return False
-    return answer.strip().lower() in {"y", "yes"}
-
-
 def command_result(
     command: str,
     *,
@@ -66,11 +53,11 @@ def command_result(
     )
 
 
-def run_command(
-    command: str,
-    approve: ApprovalFunction = request_approval,
-) -> str:
-    """Run one command after explicit approval."""
+def run_command(command: str, approve: ApprovalFunction) -> str:
+    """Run one command if approve(command) returns True.
+
+    This module never reads the keyboard. The caller decides how to ask.
+    """
     if not approve(command):
         return command_result(
             command,

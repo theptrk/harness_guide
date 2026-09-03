@@ -102,21 +102,25 @@ TOOLS = (
 )
 ```
 
-Their Python functions go into the existing dispatch dictionary:
+The agent receives one `Browser` and puts its methods into the per-agent
+function table:
 
 ```python
-TOOL_FUNCTIONS = {
-    # ...
-    "open_page": browser_tools.open_page,
-    "read_page": browser_tools.read_page,
-    "type_text": browser_tools.type_text,
-    "click": browser_tools.click,
-}
+def __init__(self, client, browser, *, emit, approve):
+    ...
+    self.browser = browser
+    self.tool_functions = {
+        # ...
+        "open_page": self.browser.open_page,
+        "read_page": self.browser.read_page,
+        "type_text": self.browser.type_text,
+        "click": self.browser.click,
+    }
 ```
 
 The agent loop is unchanged. `main()` still calls
 `agent.handle_message(said)`. If the model returns a `function_call` named
-`click`, `self._run_tool()` selects `browser_tools.click` from this dictionary and
+`click`, `self._run_tool()` selects `self.browser.click` from this dictionary and
 passes in the model's JSON arguments.
 
 ---
@@ -124,12 +128,12 @@ passes in the model's JSON arguments.
 ## What is in browser_tools.py
 
 Level 7 adds one module, `browser_tools.py`. `main.py` imports that module,
-registers its schemas and functions, and closes the browser when the CLI exits.
-The existing agent loop still handles every `function_call`.
+builds one `Browser`, hands it to the agent, and calls `agent.close()` when the
+CLI exits. The existing agent loop still handles every `function_call`.
 
-Four functions are model-callable tools:
+Four methods of `Browser` are model-callable tools:
 
-- `open_page(target)` navigates the shared page and returns a JSON snapshot.
+- `open_page(target)` navigates this browser's page and returns a JSON snapshot.
 - `read_page()` returns a new snapshot without navigating or clicking.
 - `type_text(selector, text, press_enter)` fills one text field and can submit
   it.
@@ -139,11 +143,11 @@ The four model tools reuse the two central helpers:
 
 ```text
 open_page(target) ─┐
-read_page() ───────┼→ _current_page() → shared Playwright Page
+read_page() ───────┼→ self._current_page() → this Browser's Page
 type_text(...) ─────┤
 click(selector) ────┘
 
-shared Playwright Page → _page_state(page) → JSON tool result
+Page → _page_state(page) → JSON tool result
 ```
 
 The sections below explain those pieces in that order: create and retain the
@@ -153,46 +157,45 @@ page, navigate it, convert it to JSON, type, click, and close the browser.
 
 ## Start one browser page and keep it
 
-`_current_page()` is a utility function used by all four browser tools. On its
-first call, it starts Playwright and Chromium and creates one Playwright `Page`.
-Later calls return that same `Page`:
+`Browser._current_page()` is used by all four browser tools. On its first
+call, it launches Chromium and creates one Playwright `Page`. Later calls
+return that same `Page`:
 
 ```python
-_playwright: Playwright | None = None
-_browser: Browser | None = None
-_page: Page | None = None
+class Browser:
+    def __init__(self, headless=False):
+        self.headless = headless
+        self._browser = None
+        self._page = None
 
-def _current_page() -> Page:
-    global _playwright, _browser, _page
-    if _page is None:
-        _playwright = sync_playwright().start()
-        try:
-            _browser = _playwright.chromium.launch(headless=_headless())
-            _page = _browser.new_page()
-        except Exception:
-            _playwright.stop()
-            _playwright = None
-            raise
-    return _page
+    def _current_page(self) -> Page:
+        if self._page is None:
+            self._browser = _playwright().chromium.launch(headless=self.headless)
+            self._page = self._browser.new_page()
+        return self._page
 ```
 
-The module variables retain those objects after the function returns. That is
+The instance attributes retain those objects after the method returns. That is
 why the number from `click` is still on the page when `read_page` runs in a
-later user turn.
+later user turn. A second `Browser` has its own attributes and its own window.
 
-Chromium is visible by default. Setting `LEVEL8_HEADLESS=1` launches it without
-a visible window.
+`_playwright()` is the one module-level piece. Playwright's sync API allows one
+driver per thread, so the module starts the driver on first use and registers
+`atexit` to stop it. Every `Browser` launches its Chromium from that driver.
+
+Chromium is visible by default. `main()` reads `LEVEL8_HEADLESS` and passes
+`headless=True` to `Browser` when it is set to `1`.
 
 ---
 
 ## Open a URL or a workspace file
 
-`open_page(target)` is the first model-callable browser function. It gets the
-shared Playwright `Page`, navigates it with `page.goto()`, and converts the
+`Browser.open_page(target)` is the first model-callable browser method. It gets
+this browser's `Page`, navigates it with `page.goto()`, and converts the
 resulting page into JSON:
 
 ```python
-page = _current_page()
+page = self._current_page()
 page.goto(url, wait_until="domcontentloaded")
 return _page_state(page)
 ```
@@ -308,12 +311,12 @@ def _page_state(page: Page) -> str:
 `json.dumps()` creates the string returned to the model. The string is a
 snapshot; the live `Page` remains in `_page` for the next browser tool call.
 
-`read_page()` has no additional browser logic. It gets the shared `Page` and
+`read_page()` has no additional browser logic. It gets this browser's `Page` and
 passes it to this utility:
 
 ```python
-def read_page() -> str:
-    return _page_state(_current_page())
+def read_page(self) -> str:
+    return _page_state(self._current_page())
 ```
 
 ---
@@ -325,8 +328,8 @@ requires one CSS match, replaces that field's value with `fill()`, and can press
 Enter to submit the form:
 
 ```python
-def type_text(selector: str, text: str, press_enter: bool) -> str:
-    page = _current_page()
+def type_text(self, selector: str, text: str, press_enter: bool) -> str:
+    page = self._current_page()
     matches = page.locator(selector)
     count = matches.count()
     if count != 1:
@@ -351,8 +354,8 @@ page that Google displayed.
 Playwright's `page.locator(selector)` finds elements using a CSS selector:
 
 ```python
-def click(selector: str) -> str:
-    page = _current_page()
+def click(self, selector: str) -> str:
+    page = self._current_page()
     matches = page.locator(selector)
     count = matches.count()
     if count != 1:
@@ -371,18 +374,20 @@ new JSON snapshot so the model can observe what changed.
 
 ## Close the browser
 
-`main()` closes Chromium whether the CLI ends normally or raises an exception:
+`main()` closes the agent whether the CLI ends normally or raises an exception:
 
 ```python
 try:
     # CLI loop
     ...
 finally:
-    browser_tools.close_browser()
+    agent.close()
 ```
 
-`atexit.register(close_browser)` in `browser_tools.py` provides a second cleanup
-path if another caller imports the module without using this `main()` function.
+`Agent.close()` calls `self.browser.close()`, which closes this browser's
+Chromium if it was launched. The Playwright driver stops at process exit
+through `atexit`, and stopping the driver closes any Chromium still open, so a
+caller that forgets `close()` leaves nothing running.
 
 ---
 

@@ -109,24 +109,42 @@ RUN_COMMAND_TOOL = {
 }
 ```
 
-`main.py` adds that definition and its Python function to the existing
-registries:
+`main.py` adds that definition to `TOOLS`:
 
 ```python
 TOOLS = [TIME_TOOL] + file_tools.TOOLS + [shell_tools.RUN_COMMAND_TOOL]
+```
 
-TOOL_FUNCTIONS = {
-    # ...
-    "run_command": shell_tools.run_command,
-}
+The function table moves from a module constant into `Agent.__init__()`,
+because one entry now depends on the agent. `shell_tools.run_command()` takes
+an `approve` function and calls it before running anything. The agent binds
+its own:
+
+```python
+def __init__(self, client, *, emit, approve):
+    ...
+    self.approve = approve
+    self.tool_functions = {
+        # ...
+        "run_command": self._run_command,
+    }
+
+def _run_command(self, command):
+    return shell_tools.run_command(command, approve=self.approve)
 ```
 
 The agent loop inside `Agent.handle_message()` does not change. `main()` still calls
 `agent.handle_message(said)`. The method already knows how to execute a selected
 function and send its string result back as `function_call_output`.
 
-`run_command` also calls `input()` to ask for approval. During that prompt the
-terminal has a second reader. `main()` is not the only code that reads a line.
+Nothing in `shell_tools.py` or `Agent` reads the keyboard. `main()` passes
+`Terminal.approve`, which prints the command and reads one line:
+
+```python
+agent = Agent(OpenAI(), emit=terminal.emit, approve=terminal.approve)
+```
+
+A host without a keyboard passes a different function.
 
 ---
 
@@ -182,8 +200,8 @@ model requests command
 → result goes back to the model
 ```
 
-Only `y` and `yes`, ignoring case and surrounding spaces, approve. Pressing
-Enter or typing anything else denies.
+`Terminal.approve()` accepts only `y` and `yes`, ignoring case and surrounding
+spaces. Pressing Enter or typing anything else denies.
 
 A denial is returned as tool data:
 

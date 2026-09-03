@@ -32,15 +32,20 @@ item:
 `get_input_items()` removes the local timestamp wrapper and returns the item
 list accepted by `responses.create(input=...)`.
 
-At startup, `Agent` either creates a file or finds the latest one:
+At startup, `main()` either creates a file or finds the latest one, and passes
+the path to the agent:
 
 ```python
-self.chat_file_path = (
-    history.new_chat()
-    if create_new_chat
-    else history.latest_chat() or history.new_chat()
-)
+if "--new" in sys.argv:
+    chat_file_path = history.new_chat()
+else:
+    chat_file_path = history.latest_chat() or history.new_chat()
+
+agent = Agent(client, browser, chat_file_path, emit=terminal.emit, approve=terminal.approve)
 ```
+
+The agent stores it as `self.chat_file_path`. Which file to use is the
+caller's decision. Reading it and appending to it is the agent's.
 
 ## Commit only a completed turn
 

@@ -1,8 +1,8 @@
 # Level 0 — Call a model
 
 You create one `Agent`, send it a question, and print what comes back. One file,
-one dependency. `Agent` owns the OpenAI client. `main()` parses the question
-and calls `handle_message()`.
+one dependency. `main()` builds the OpenAI client and hands it to `Agent`.
+`Agent` makes the request and returns the response. `main()` prints it.
 
 This is the only level with nothing before it, so there's no "here's what broke" to open with. Everything after this one starts with something that doesn't work.
 
@@ -40,15 +40,15 @@ export UV_ENV_FILE=.env
 
 Then `uv run series-1-agent-class/00-model/main.py --raw "why is the sky blue"` is equivalent.
 
-The agent creates one OpenAI client:
+The agent holds one OpenAI client and makes one request with it:
 
 ```python
 class Agent:
-    def __init__(self):
-        self.client = OpenAI()
+    def __init__(self, client):
+        self.client = client
 
-    def handle_message(self, question, raw=False):
-        response = self.client.responses.create(
+    def handle_message(self, question):
+        return self.client.responses.create(
             model=MODEL,
             instructions=SYSTEM_PROMPT,  # applies to every question
             input=question,              # user input
@@ -56,8 +56,9 @@ class Agent:
         )
 ```
 
-`main()` reads the command-line arguments, creates `Agent()`, and calls
-`agent.handle_message(question, raw)`. It does not make the model request.
+`main()` reads the command-line arguments, creates `Agent(OpenAI())`, and calls
+`agent.handle_message(question)`. It does not make the model request. The
+agent does not print; `main()` prints the response it gets back.
 
 That `--raw` flag makes the command print the output text twice:
 
@@ -187,12 +188,15 @@ message passed to `Agent.handle_message()`.
 
 ## What this level adds
 
-**`Agent` owns the client.** `main()` only parses argv and calls
-`handle_message()`. Later levels keep that split.
+**`Agent` makes the request. `main()` does everything else.** `main()` checks
+the environment, builds the client, parses argv, and prints. There is no
+`print()` inside `Agent`. Later levels keep that split, so the same class can
+run behind something other than a terminal.
 
-**The key lives in the environment, not the code.** `Agent.__init__()` calls
-`OpenAI()`, which reads `OPENAI_API_KEY` on its own. You never pass it in, never
-assign it to a variable, never let it near a file you might commit.
+**The key lives in the environment, not the code.** `main()` calls `OpenAI()`,
+which reads `OPENAI_API_KEY` on its own, and passes the client to `Agent`. You
+never pass the key in, never assign it to a variable, never let it near a file
+you might commit.
 
 **You send two pieces of text, and they have different jobs.** `instructions`
 is the system prompt — it applies to every question you'll ever ask. `input` is

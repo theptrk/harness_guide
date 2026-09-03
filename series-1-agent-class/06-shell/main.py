@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -56,42 +57,46 @@ def get_current_time(timezone: str) -> str:
     )
 
 
-TOOL_FUNCTIONS = {
-    "get_current_time": get_current_time,
-    "list_files": file_tools.list_files,
-    "read_file": file_tools.read_file,
-    "write_file": file_tools.write_file,
-    "edit_file": file_tools.edit_file,
-    "run_command": shell_tools.run_command,
-}
+Emit = Callable[[dict], None]
 
 
 class Agent:
-    """One model client and one conversation."""
+    """One model client and one conversation.
 
-    def __init__(self):
-        if not os.getenv("OPENAI_API_KEY"):
-            sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+    The agent never prints and never reads the keyboard. It reports each step
+    of a turn through emit and asks about shell commands through approve.
+    """
 
-        self.client = OpenAI()
+    def __init__(
+        self,
+        client: OpenAI,
+        *,
+        emit: Emit,
+        approve: shell_tools.ApprovalFunction,
+    ):
+        self.client = client
+        self.emit = emit
+        self.approve = approve
         self.input_items = []
-        print("[workspace: series-1-agent-class/06-shell/agent_workspace]")
-        print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
+        # Built per agent because run_command needs this agent's approve.
+        self.tool_functions = {
+            "get_current_time": get_current_time,
+            "list_files": file_tools.list_files,
+            "read_file": file_tools.read_file,
+            "write_file": file_tools.write_file,
+            "edit_file": file_tools.edit_file,
+            "run_command": self._run_command,
+        }
 
-    @staticmethod
-    def _display_tool_result(tool_result: str) -> str:
-        """Format JSON for the terminal without changing the stored tool result."""
-        try:
-            value = json.loads(tool_result)
-        except json.JSONDecodeError:
-            return tool_result
-        return json.dumps(value, indent=2)
+    def _run_command(self, command: str) -> str:
+        """Run one shell command after this agent's approve function says yes."""
+        return shell_tools.run_command(command, approve=self.approve)
 
     def _run_tool(self, tool_call) -> str:
         """Run one requested tool, converting any failure into tool output."""
         try:
             arguments = json.loads(tool_call.arguments)
-            tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+            tool_function = self.tool_functions.get(tool_call.name)
             if tool_function is None:
                 raise LookupError(f"unknown tool: {tool_call.name}")
             return tool_function(**arguments)
@@ -104,8 +109,8 @@ class Agent:
         input_items: list[dict],
         force_answer: bool,
     ):
-        """Print text deltas, then return the terminal response."""
-        print(f"\n[model call {model_call} started]", flush=True)
+        """Emit text fragments as they arrive, then return the terminal response."""
+        self.emit({"type": "model_started", "model_call": model_call})
 
         final_response = None
         text_started = False
@@ -124,15 +129,11 @@ class Agent:
                     "response.output_text.delta",
                     "response.refusal.delta",
                 }:
-                    if not text_started:
-                        print("\n🤖 model › ", end="", flush=True)
-                    print(event.delta, end="", flush=True)
+                    self.emit({"type": "text", "text": event.delta})
                     text_started = True
                 elif event.type == "response.completed":
                     final_response = event.response
 
-        if text_started:
-            print()
         if final_response is None:
             raise RuntimeError("model stream ended without a terminal response")
         return final_response, text_started
@@ -146,87 +147,150 @@ class Agent:
         output_tokens = 0
         force_answer = False
 
-        try:
-            while True:
-                response, text_was_streamed = self._stream_response(
-                    model_calls + 1,
-                    self.input_items + turn_items,
-                    force_answer,
-                )
-                model_calls += 1
-                if response.usage is not None:
-                    input_tokens += response.usage.input_tokens
-                    output_tokens += response.usage.output_tokens
-                turn_items.extend(
-                    item.model_dump(mode="json", exclude_none=True)
-                    for item in response.output
-                )
+        while True:
+            response, text_was_streamed = self._stream_response(
+                model_calls + 1,
+                self.input_items + turn_items,
+                force_answer,
+            )
+            model_calls += 1
+            if response.usage is not None:
+                input_tokens += response.usage.input_tokens
+                output_tokens += response.usage.output_tokens
+            turn_items.extend(
+                item.model_dump(mode="json", exclude_none=True)
+                for item in response.output
+            )
 
-                # response.output may contain messages, function calls, or other
-                # item types. Find the function call relevant to this lesson.
-                tool_call = next(
-                    (item for item in response.output if item.type == "function_call"),
-                    None,
+            # response.output may contain messages, function calls, or other
+            # item types. Find the function call relevant to this lesson.
+            tool_call = next(
+                (item for item in response.output if item.type == "function_call"),
+                None,
+            )
+
+            if tool_call is None:
+                # No tool request means the model has finished this turn.
+                if not text_was_streamed:
+                    self.emit({"type": "text", "text": response.output_text})
+                break
+            if force_answer:
+                raise RuntimeError("model requested a tool after tool use was disabled")
+
+            self.emit({"type": "tool", "name": tool_call.name, "arguments": tool_call.arguments})
+            if tool_calls >= TOOL_CALL_LIMIT:
+                tool_result = (
+                    f"ToolCallLimit: the limit of {TOOL_CALL_LIMIT} "
+                    "tool calls has been reached"
                 )
+                force_answer = True
+            else:
+                tool_result = self._run_tool(tool_call)
+                tool_calls += 1
+            self.emit({"type": "tool_result", "name": tool_call.name, "output": tool_result})
 
-                if tool_call is None:
-                    # No tool request means the model has finished this turn.
-                    if not text_was_streamed:
-                        print(f"\n🤖 model › {response.output_text}")
-                    break
-                if force_answer:
-                    raise RuntimeError("model requested a tool after tool use was disabled")
-
-                print(f"\ntool › {tool_call.name}({tool_call.arguments})")
-                if tool_calls >= TOOL_CALL_LIMIT:
-                    tool_result = (
-                        f"ToolCallLimit: the limit of {TOOL_CALL_LIMIT} "
-                        "tool calls has been reached"
-                    )
-                    force_answer = True
-                else:
-                    tool_result = self._run_tool(tool_call)
-                    tool_calls += 1
-                print(f"tool ‹ {self._display_tool_result(tool_result)}")
-
-                turn_items.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": tool_result,
-                    },
-                )
-        except KeyboardInterrupt:
-            print("\n[turn interrupted]")
-            raise
-        except Exception as e:
-            print(f"call failed: {e}", file=sys.stderr)
-            return
+            turn_items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": tool_result,
+                },
+            )
 
         self.input_items.extend(turn_items)
-        print(
-            f"    [{model_calls} model call(s) · {tool_calls} tool call(s) · "
-            f"{input_tokens} in + {output_tokens} out]\n"
+        self.emit(
+            {
+                "type": "done",
+                "model_calls": model_calls,
+                "tool_calls": tool_calls,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
         )
 
 
+def display_tool_result(tool_result: str) -> str:
+    """Format JSON for the terminal without changing the stored tool result."""
+    try:
+        value = json.loads(tool_result)
+    except json.JSONDecodeError:
+        return tool_result
+    return json.dumps(value, indent=2)
+
+
+class Terminal:
+    """Print agent events and ask the person at the keyboard for approvals.
+
+    Text arrives in fragments, so the terminal remembers whether a model line
+    is open and closes it before printing anything else.
+    """
+
+    def __init__(self):
+        self.text_open = False
+
+    def emit(self, event: dict) -> None:
+        kind = event["type"]
+        if kind == "text":
+            if not self.text_open:
+                print("\n🤖 model › ", end="", flush=True)
+                self.text_open = True
+            print(event["text"], end="", flush=True)
+            return
+
+        if self.text_open:
+            print()
+            self.text_open = False
+
+        if kind == "model_started":
+            print(f"\n[model call {event['model_call']} started]", flush=True)
+        elif kind == "tool":
+            print(f"\ntool › {event['name']}({event['arguments']})")
+        elif kind == "tool_result":
+            print(f"tool ‹ {display_tool_result(event['output'])}")
+        elif kind == "done":
+            print(
+                f"    [{event['model_calls']} model call(s) · {event['tool_calls']} tool call(s) · "
+                f"{event['input_tokens']} in + {event['output_tokens']} out]\n"
+            )
+
+    def approve(self, command: str) -> bool:
+        """Show the exact command. Empty or unrecognized input means no."""
+        try:
+            answer = input(
+                f"\n[approval required]\n"
+                f"Command: {command}\n"
+                "Run it? Type yes to continue [y/N]: "
+            )
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer.strip().lower() in {"y", "yes"}
+
+
 def main() -> None:
-    agent = Agent()
+    if not os.getenv("OPENAI_API_KEY"):
+        sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+
+    terminal = Terminal()
+    agent = Agent(OpenAI(), emit=terminal.emit, approve=terminal.approve)
+    print("[workspace: series-1-agent-class/06-shell/agent_workspace]")
+    print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
     while True:
         try:
             said = input("📝 you › ").strip()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             print()
             break
+        if not said:
+            continue
+
+        try:
+            agent.handle_message(said)
         except KeyboardInterrupt:
-            print()
+            print("\n[turn interrupted]")
             break
-        if said:
-            try:
-                agent.handle_message(said)
-            except KeyboardInterrupt:
-                break
+        except Exception as error:
+            print(f"call failed: {error}", file=sys.stderr)
 
 
 if __name__ == "__main__":

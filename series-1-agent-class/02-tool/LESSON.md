@@ -31,6 +31,27 @@ TOOL_FUNCTIONS = {
 `strict: True` constrains the generated argument shape. Python still validates
 whether a value such as `Asia/Tokyo` is meaningful.
 
+## The agent reports, the terminal prints
+
+A turn now has up to two model calls with a tool call between them. The tool
+call should appear in the terminal before the second model call starts, and
+`handle_message()` can no longer return one response. So `Agent` takes an
+`emit` function when it is created and calls it once per step:
+
+```python
+agent = Agent(OpenAI(), emit=print_event)
+```
+
+Each call passes one dict with a `type`:
+
+- `tool`: the model requested a function. Fields `name` and `arguments`.
+- `tool_result`: the function returned. Fields `name` and `output`.
+- `text`: the answer.
+- `done`: the turn is over. Model calls, tool calls, and token counts.
+
+`print_event()` in `main.py` prints each one. `Agent` has no `print()` in it.
+A host that is not a terminal passes a different function.
+
 ## The first model call
 
 `responses.create()` returns one response object. Its `output` list can contain
