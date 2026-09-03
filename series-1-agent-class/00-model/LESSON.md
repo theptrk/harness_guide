@@ -67,7 +67,7 @@ if raw:
     print(response.model_dump_json(indent=2))
 
 # once using the sdk helper property ".output_text"
-print(response.output_text)
+print(f"🤖 model › {response.output_text}")
 ```
 
 A truncated sample of the JSON:
@@ -152,7 +152,8 @@ uv run --env-file .env series-1-agent-class/00-model/main.py "why is the sky blu
 
 The model's answer prints first. The usage line follows:
 
-```
+```text
+🤖 model › Sunlight contains many colors...
 [27 input + 52 output tokens  0 reasoning tokens  status=completed]
 ```
 
@@ -219,7 +220,7 @@ and measures what happens.
   ```
 2. Confirm that the terminal shows:
   - A raw response containing `output`, `usage`, `model`, and `status`.
-  - The answer text after the raw response.
+  - A `🤖 model ›` line containing the answer.
   - A final line with nonzero input and output token counts, `0 reasoning`, and `status=completed`.
 
 ---

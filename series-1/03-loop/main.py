@@ -120,11 +120,6 @@ def run_turn(client, chat_file_path, said: str) -> None:
         print(f"call failed: {error}", file=sys.stderr)
         return
 
-    if not answer:
-        print("\n[stopped: model returned no answer]")
-        print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
-        return
-
     print(f"\n🤖 model › {answer}")
     print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
 

@@ -1,6 +1,6 @@
-"""Level 3 — keep calling tools until the model answers.
+"""Level 4 — stream model text and exclude unfinished turns.
 
-    uv run --env-file .env series-1-agent-class/03-loop/main.py
+    uv run --env-file .env series-1-agent-class/04-stream/main.py
 """
 
 import json
@@ -61,7 +61,7 @@ class Agent:
 
         self.client = OpenAI()
         self.input_items = []
-        print("Ctrl-D to leave.\n")
+        print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
     @staticmethod
     def _display_tool_result(tool_result: str) -> str:
@@ -80,10 +80,48 @@ class Agent:
             raise RuntimeError(f"unknown tool: {tool_call.name}")
         return tool_function(**arguments)
 
+    def _stream_response(
+        self,
+        model_call: int,
+        input_items: list[dict],
+        force_answer: bool,
+    ):
+        """Print text deltas, then return the terminal response."""
+        print(f"\n[model call {model_call} started]", flush=True)
+
+        final_response = None
+        text_started = False
+        with self.client.responses.create(
+            model=MODEL,
+            instructions=SYSTEM_PROMPT,
+            input=input_items,
+            tools=TOOLS,
+            tool_choice="none" if force_answer else "auto",
+            parallel_tool_calls=False,
+            reasoning={"effort": "none"},
+            stream=True,
+        ) as stream:
+            for event in stream:
+                if event.type in {
+                    "response.output_text.delta",
+                    "response.refusal.delta",
+                }:
+                    if not text_started:
+                        print("\n🤖 model › ", end="", flush=True)
+                    print(event.delta, end="", flush=True)
+                    text_started = True
+                elif event.type == "response.completed":
+                    final_response = event.response
+
+        if text_started:
+            print()
+        if final_response is None:
+            raise RuntimeError("model stream ended without a terminal response")
+        return final_response, text_started
+
     def handle_message(self, said: str) -> None:
         """Run one user request until the model returns an answer."""
         turn_items = [{"role": "user", "content": said}]
-        answer = None
         model_calls = 0
         tool_calls = 0
         input_tokens = 0
@@ -92,23 +130,19 @@ class Agent:
 
         try:
             while True:
-                response = self.client.responses.create(
-                    model=MODEL,
-                    instructions=SYSTEM_PROMPT,
-                    input=self.input_items + turn_items,
-                    tools=TOOLS,
-                    tool_choice="none" if force_answer else "auto",
-                    parallel_tool_calls=False,
-                    reasoning={"effort": "none"},
-                )
-                turn_items.extend(
-                    item.model_dump(mode="json", exclude_none=True)
-                    for item in response.output
+                response, text_was_streamed = self._stream_response(
+                    model_calls + 1,
+                    self.input_items + turn_items,
+                    force_answer,
                 )
                 model_calls += 1
                 if response.usage is not None:
                     input_tokens += response.usage.input_tokens
                     output_tokens += response.usage.output_tokens
+                turn_items.extend(
+                    item.model_dump(mode="json", exclude_none=True)
+                    for item in response.output
+                )
 
                 # response.output may contain messages, function calls, or other
                 # item types. Find the function call relevant to this lesson.
@@ -119,7 +153,8 @@ class Agent:
 
                 if tool_call is None:
                     # No tool request means the model has finished this turn.
-                    answer = response.output_text
+                    if not text_was_streamed:
+                        print(f"\n🤖 model › {response.output_text}")
                     break
                 if force_answer:
                     raise RuntimeError("model requested a tool after tool use was disabled")
@@ -143,19 +178,14 @@ class Agent:
                         "output": tool_result,
                     },
                 )
-
-            if not answer:
-                raise RuntimeError("model returned no answer")
         except KeyboardInterrupt:
-            print()
-            raise SystemExit
+            print("\n[turn interrupted]")
+            raise
         except Exception as e:
             print(f"call failed: {e}", file=sys.stderr)
             return
 
         self.input_items.extend(turn_items)
-
-        print(f"\n🤖 model › {answer}")
         print(
             f"    [{model_calls} model call(s) · {tool_calls} tool call(s) · "
             f"{input_tokens} in + {output_tokens} out]\n"
@@ -171,8 +201,14 @@ def main() -> None:
         except EOFError:
             print()
             break
+        except KeyboardInterrupt:
+            print()
+            break
         if said:
-            agent.handle_message(said)
+            try:
+                agent.handle_message(said)
+            except KeyboardInterrupt:
+                break
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ class Agent:
             print(response.model_dump_json(indent=2))
             print("\n" + "─" * 60 + "\n", file=sys.stderr)
 
-        print(response.output_text)
+        print(f"🤖 model › {response.output_text}")
 
         used = response.usage
         reasoning = used.output_tokens_details.reasoning_tokens

@@ -22,10 +22,9 @@ while True:
         agent.handle_message(said)
 ```
 
-Levels 1 through 8 keep that boundary. Tool handling, the agent loop, streaming,
-files, shell commands, and browser tools change without adding the client or
-conversation back to the terminal loop. Level 9 optionally persists completed
-conversations as JSONL files.
+Levels 1 through 9 keep that boundary. Tool handling, the agent loop, streaming,
+files, shell commands, browser tools, and persistence arrive one at a time.
+Level 9 hardens the complete persistent agent after its capabilities are in place.
 
 Start with [Level 0](00-model/LESSON.md), then work through the numbered folders
 in order.

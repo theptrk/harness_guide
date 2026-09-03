@@ -62,11 +62,34 @@ class Agent:
         self.input_items = []
         print("Ctrl-D to leave.\n")
 
+    @staticmethod
+    def _display_tool_result(tool_result: str) -> str:
+        """Format JSON for the terminal without changing the stored tool result."""
+        try:
+            value = json.loads(tool_result)
+        except json.JSONDecodeError:
+            return tool_result
+        return json.dumps(value, indent=2)
+
+    def _run_tool(self, tool_call) -> str:
+        """Execute one function_call item returned by the model."""
+        arguments = json.loads(tool_call.arguments)
+        tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+        if tool_function is None:
+            raise RuntimeError(f"unknown tool: {tool_call.name}")
+        return tool_function(**arguments)
+
     def handle_message(self, said: str) -> None:
         """Send one message, allowing one tool call before the answer."""
         turn_items = [{"role": "user", "content": said}]
+        answer = None
+        model_calls = 0
+        tool_calls = 0
+        input_tokens = 0
+        output_tokens = 0
 
         try:
+            # First model call: either answer directly or request the tool.
             response = self.client.responses.create(
                 model=MODEL,
                 instructions=SYSTEM_PROMPT,
@@ -79,25 +102,24 @@ class Agent:
                 item.model_dump(mode="json", exclude_none=True)
                 for item in response.output
             )
+            model_calls += 1
+            input_tokens += response.usage.input_tokens
+            output_tokens += response.usage.output_tokens
 
-            model_calls = 1
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
-
+            # response.output may contain messages, function calls, or other
+            # item types. Find the function call relevant to this lesson.
             tool_call = next(
                 (item for item in response.output if item.type == "function_call"),
                 None,
             )
 
-            if tool_call is not None:
-                arguments = json.loads(tool_call.arguments)
+            if tool_call is None:
+                answer = response.output_text
+            else:
                 print(f"\ntool › {tool_call.name}({tool_call.arguments})")
-
-                tool_function = TOOL_FUNCTIONS.get(tool_call.name)
-                if tool_function is None:
-                    raise RuntimeError(f"unknown tool: {tool_call.name}")
-                tool_result = tool_function(**arguments)
-                print(f"tool ‹ {tool_result}")
+                tool_result = self._run_tool(tool_call)
+                tool_calls += 1
+                print(f"tool ‹ {self._display_tool_result(tool_result)}")
 
                 turn_items.append(
                     {
@@ -106,6 +128,9 @@ class Agent:
                         "output": tool_result,
                     },
                 )
+
+                # Second model call: it must answer because this lesson allows
+                # only one tool call. Level 3 replaces this limit with a loop.
                 response = self.client.responses.create(
                     model=MODEL,
                     instructions=SYSTEM_PROMPT,
@@ -121,6 +146,21 @@ class Agent:
                 model_calls += 1
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
+
+                next_tool_call = next(
+                    (item for item in response.output if item.type == "function_call"),
+                    None,
+                )
+
+                if next_tool_call is not None:
+                    raise RuntimeError(
+                        "this lesson allows one tool call, but the model requested "
+                        f"another {next_tool_call.name} call"
+                    )
+                answer = response.output_text
+
+            if not answer:
+                raise RuntimeError("model returned no answer")
         except KeyboardInterrupt:
             print()
             raise SystemExit
@@ -130,21 +170,11 @@ class Agent:
 
         self.input_items.extend(turn_items)
 
-        answer = response.output_text
-        if not answer:
-            next_tool_call = next(
-                (item for item in response.output if item.type == "function_call"),
-                None,
-            )
-            if next_tool_call is not None:
-                print(f"\n[stopped: model requested another {next_tool_call.name} call]")
-            else:
-                print("\n[stopped: model returned no answer]")
-            print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
-            return
-
         print(f"\n🤖 model › {answer}")
-        print(f"    [{model_calls} model call(s) · {input_tokens} in + {output_tokens} out]\n")
+        print(
+            f"    [{model_calls} model call(s) · {tool_calls} tool call(s) · "
+            f"{input_tokens} in + {output_tokens} out]\n"
+        )
 
 
 def main() -> None:

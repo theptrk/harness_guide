@@ -1,7 +1,8 @@
 # Level 3 — Build the agent loop
 
-Level 2 handles one tool request. A request for several timezones may require
-several model and tool calls. Level 3 repeats until the model answers:
+Level 2 handles one tool request with a fixed sequence. A request for several
+timezones may require several model and tool calls. Level 3 puts the same model
+call, response inspection, and tool execution inside `while True`:
 
 1. Call the model with the conversation and active turn.
 2. Add the complete response items to the active turn.
@@ -27,12 +28,13 @@ while True:
     agent.handle_message(said)
 ```
 
-`run_turn()` owns one user request. `Agent` supplies the client and its
-in-memory conversation:
+`Agent.handle_message()` owns one user request and operates on the agent's
+client and in-memory conversation:
 
 ```python
 def handle_message(self, said):
-    run_turn(self.client, self.input_items, said)
+    turn_items = [{"role": "user", "content": said}]
+    # Keep calling the model until it returns an answer.
 ```
 
 ## One active turn
@@ -47,28 +49,62 @@ Every pass sends completed conversation items followed by everything that has
 happened in this turn:
 
 ```python
-response = client.responses.create(
+response = self.client.responses.create(
     model=MODEL,
     instructions=SYSTEM_PROMPT,
-    input=input_items + turn_items,
+    input=self.input_items + turn_items,
     tools=TOOLS,
     parallel_tool_calls=False,
 )
 ```
 
-The response items join `turn_items`. If one is a `function_call`, the harness
-runs it and appends a matching `function_call_output`. The next pass therefore
-sees the user request, every tool request, and every result.
+The response items join `turn_items`. The same search from Level 2 finds the
+first `function_call` item, or `None` when there is not one:
+
+```python
+tool_call = next(
+    (item for item in response.output if item.type == "function_call"),
+    None,
+)
+```
+
+If there is no tool call, the model has answered and the loop ends:
+
+```python
+if tool_call is None:
+    answer = response.output_text
+    break
+```
+
+Otherwise, the unchanged `_run_tool()` method executes it and the harness adds
+a matching `function_call_output`. The next iteration sees the user request,
+every prior tool request, and every result:
+
+```python
+tool_result = self._run_tool(tool_call)
+turn_items.append(
+    {
+        "type": "function_call_output",
+        "call_id": tool_call.call_id,
+        "output": tool_result,
+    }
+)
+```
 
 When the model finally returns no function call, the complete turn joins the
 conversation:
 
 ```python
-input_items.extend(turn_items)
+self.input_items.extend(turn_items)
 ```
 
-The number of tool calls is not decided in advance. Each response determines
-whether another pass is needed.
+That is the central new mechanism: Level 2 raises an error when the second
+model response requests another tool; Level 3 lets that request start another
+iteration.
 
-The loop is still unbounded and assumes valid, complete responses and working
-tools. [Level 4](../04-harden/LESSON.md) handles those failures.
+The loop allows up to five tool executions. If the model requests a sixth, the
+harness returns a `ToolCallLimit` result and disables tools for the final model
+call. This keeps a mistaken model from looping forever while still letting it
+explain why it stopped. Level 3 still assumes working tools; later levels harden
+tool execution. [Level 4](../04-stream/LESSON.md) first streams the model's
+answer.
