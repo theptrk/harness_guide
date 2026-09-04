@@ -33,24 +33,19 @@ whether a value such as `Asia/Tokyo` is meaningful.
 
 ## The agent reports, the terminal prints
 
-A turn now has up to two model calls with a tool call between them. The tool
-call should appear in the terminal before the second model call starts, and
-`handle_message()` can no longer return one response. So `Agent` takes an
-`emit` function when it is created and calls it once per step:
-
-```python
-agent = Agent(OpenAI(), emit=print_event)
-```
-
-Each call passes one dict with a `type`:
+A turn now has up to two model calls with a tool call between them. The agent
+emits the tool call when it happens, so it appears in the terminal before the
+second model call starts. Two event types are new:
 
 - `tool`: the model requested a function. Fields `name` and `arguments`.
 - `tool_result`: the function returned. Fields `name` and `output`.
-- `text`: the answer.
-- `done`: the turn is over. Model calls, tool calls, and token counts.
 
-`print_event()` in `main.py` prints each one. `Agent` has no `print()` in it.
-A host that is not a terminal passes a different function.
+`text` is still the answer. `done` now carries model calls and tool calls as
+well as token counts, because one turn can contain two responses. For the
+same reason there is no `response` event and no `--raw` flag at this level.
+
+`Terminal.emit()` gets a branch for each new type. Without the raw flags it
+has no attributes. Level 4 gives it one.
 
 ## The first model call
 

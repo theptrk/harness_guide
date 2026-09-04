@@ -17,11 +17,12 @@ Try asking for the current time in Tokyo, New York, and London.
 
 ## Two loops
 
-`main()` owns the terminal session. It creates one `Agent` with a function
-that prints events, reads messages, and stops at `Ctrl-D`:
+`main()` owns the terminal session. It creates one `Terminal` and one `Agent`
+that reports to it, reads messages, and stops at `Ctrl-D`:
 
 ```python
-agent = Agent(OpenAI(), emit=print_event)
+terminal = Terminal()
+agent = Agent(OpenAI(), emit=terminal.emit)
 
 while True:
     said = input("📝 you › ").strip()

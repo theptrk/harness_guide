@@ -1,8 +1,9 @@
 # Level 0 — Call a model
 
 You create one `Agent`, send it a question, and print what comes back. One file,
-one dependency. `main()` builds the OpenAI client and hands it to `Agent`.
-`Agent` makes the request and returns the response. `main()` prints it.
+one dependency. `main()` builds the OpenAI client and a `Terminal`. `Agent`
+makes the request and calls `terminal.emit` with what came back. `Terminal`
+prints.
 
 This is the only level with nothing before it, so there's no "here's what broke" to open with. Everything after this one starts with something that doesn't work.
 
@@ -40,35 +41,46 @@ export UV_ENV_FILE=.env
 
 Then `uv run series-1-agent-class/00-model/main.py --raw "why is the sky blue"` is equivalent.
 
-The agent holds one OpenAI client and makes one request with it:
+The agent holds one OpenAI client and one `emit` function. It makes one
+request and reports it in three `emit` calls:
 
 ```python
 class Agent:
-    def __init__(self, client):
+    def __init__(self, client, *, emit):
         self.client = client
+        self.emit = emit
 
     def handle_message(self, question):
-        return self.client.responses.create(
+        response = self.client.responses.create(
             model=MODEL,
             instructions=SYSTEM_PROMPT,  # applies to every question
             input=question,              # user input
             reasoning={"effort": "none"},
         )
+        self.emit({"type": "response", "response": response})
+        self.emit({"type": "text", "text": response.output_text})
+        self.emit({"type": "done", "input_tokens": ..., "output_tokens": ..., ...})
 ```
 
-`main()` reads the command-line arguments, creates `Agent(OpenAI())`, and calls
-`agent.handle_message(question)`. It does not make the model request. The
-agent does not print; `main()` prints the response it gets back.
+Each `emit` call passes one dict with a `type`: `response` carries the whole
+response object, `text` carries the answer, `done` carries the token counts,
+`status`, and `model`.
 
-That `--raw` flag makes the command print the output text twice:
+`main()` reads the command-line arguments, creates `Terminal(raw=raw)`, creates
+`Agent(OpenAI(), emit=terminal.emit)`, and calls
+`agent.handle_message(question)`. It does not make the model request. The
+agent does not print. `Terminal.emit()` prints each event it receives.
+
+That `--raw` flag makes the terminal print the output text twice:
 
 ```python
 # once as the entire json model response
-if raw:
-    print(response.model_dump_json(indent=2))
+if kind == "response" and self.raw:
+    print(event["response"].model_dump_json(indent=2))
 
-# once using the sdk helper property ".output_text"
-print(f"🤖 model › {response.output_text}")
+# once as the answer the agent read out of it with ".output_text"
+elif kind == "text":
+    print(f"🤖 model › {event['text']}")
 ```
 
 A truncated sample of the JSON:
@@ -167,7 +179,7 @@ Same call. The difference is only how much of the response you chose to look at.
 ```
 series-1-agent-class/00-model/
   LESSON.md    this file
-  main.py      Agent and the command-line entry point
+  main.py      Agent, Terminal, and the command-line entry point
 ```
 
 The core of the code is this call:
@@ -188,10 +200,16 @@ message passed to `Agent.handle_message()`.
 
 ## What this level adds
 
-**`Agent` makes the request. `main()` does everything else.** `main()` checks
-the environment, builds the client, parses argv, and prints. There is no
-`print()` inside `Agent`. Later levels keep that split, so the same class can
-run behind something other than a terminal.
+**`Agent` makes the request and reports it. `Terminal` prints.** `main()`
+checks the environment, parses argv, and builds both. There is no `print()`
+inside `Agent`. It calls `emit` with one dict per event, and `emit` is
+whatever function `main()` passed in. Here that is `Terminal.emit`. A host
+that is not a terminal passes a different function. Every later level creates
+the agent the same way and adds arguments beside `emit`:
+
+```python
+agent = Agent(OpenAI(), emit=terminal.emit)
+```
 
 **The key lives in the environment, not the code.** `main()` calls `OpenAI()`,
 which reads `OPENAI_API_KEY` on its own, and passes the client to `Agent`. You
