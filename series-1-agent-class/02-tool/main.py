@@ -179,30 +179,27 @@ def display_tool_result(tool_result: str) -> str:
     return json.dumps(value, indent=2)
 
 
-class Terminal:
-    """Print agent events."""
-
-    def emit(self, event: dict) -> None:
-        kind = event["type"]
-        if kind == "tool":
-            print(f"\ntool › {event['name']}({event['arguments']})")
-        elif kind == "tool_result":
-            print(f"tool ‹ {display_tool_result(event['output'])}")
-        elif kind == "text":
-            print(f"\n🤖 model › {event['text']}")
-        elif kind == "done":
-            print(
-                f"    [{event['model_calls']} model call(s) · {event['tool_calls']} tool call(s) · "
-                f"{event['input_tokens']} in + {event['output_tokens']} out]\n"
-            )
+def print_event(event: dict) -> None:
+    """Show one agent event in the terminal."""
+    kind = event["type"]
+    if kind == "tool":
+        print(f"\ntool › {event['name']}({event['arguments']})")
+    elif kind == "tool_result":
+        print(f"tool ‹ {display_tool_result(event['output'])}")
+    elif kind == "text":
+        print(f"\n🤖 model › {event['text']}")
+    elif kind == "done":
+        print(
+            f"    [{event['model_calls']} model call(s) · {event['tool_calls']} tool call(s) · "
+            f"{event['input_tokens']} in + {event['output_tokens']} out]\n"
+        )
 
 
 def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
 
-    terminal = Terminal()
-    agent = Agent(OpenAI(), emit=terminal.emit)
+    agent = Agent(OpenAI(), emit=print_event)
     print("Ctrl-D to leave.\n")
 
     while True:

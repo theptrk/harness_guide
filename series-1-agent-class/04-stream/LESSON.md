@@ -105,10 +105,10 @@ If a response contains answer text but the stream emitted no text deltas, `handl
 
 ## The terminal remembers whether a line is open
 
-Level 3's `Terminal` printed each event as a whole line and had no
-attributes. A `text` event is now a fragment. The terminal has to print the
+Level 3 printed events with one function, `print_event()`. Each event was a
+whole line. A `text` event is now a fragment. The terminal has to print the
 `🤖 model ›` prefix before the first fragment and a newline after the last, so
-`Terminal` gets one attribute:
+`print_event()` becomes a class with one attribute:
 
 ```python
 class Terminal:
