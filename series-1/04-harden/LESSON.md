@@ -11,7 +11,9 @@ tool › get_current_time({"timezone":"Mars/Olympus"})
 call failed: 'No time zone found with key Mars/Olympus'
 ```
 
-The model requested a function call, but the file contains no matching `function_call_output`. The turn cannot continue.
+Level 3 writes the failure as that call's `function_call_output` before giving up, so the record stays valid and the next question works. But the turn is over. The model never reads the error, so a typo in one argument costs the whole request.
+
+The model is best placed to fix a bad argument. Level 4 gives it the error while the turn is still running.
 
 Level 4 handles two classes of failure differently:
 
@@ -46,6 +48,8 @@ The tool still failed. The loop did not fail.
 ---
 
 ## A tool error still completes the call
+
+Levels 2 and 3 pair every call with an output so the file stays readable. Here the same rule is the reason a tool error is useful rather than fatal.
 
 A normal message has no paired result. A completed `function_call` does: if that call is replayed in later model input, it needs one `function_call_output` with the same `call_id`.
 
@@ -166,6 +170,15 @@ history.append_items(chat_file_path, turn_items)
 ```
 
 Every item in the JSONL file is therefore eligible for later model input. `history.py` does not filter debugging events because the chat file contains none.
+
+Buffering the turn also removes two things Levels 2 and 3 needed. Their `history.py` has `append_item()` for one item at a time and `drop_last_item()` to take back an unsent user line, plus a read that leaves out calls with no output. A turn that reaches the file here is already whole, so this `history.py` has `append_items()` and a read that returns every line:
+
+```python
+def get_input_items(path: Path) -> list[dict]:
+    """Return every stored item as Responses API input."""
+```
+
+Writing a partial turn is what made a partial read necessary.
 
 You can force the model to run out of output tokens:
 

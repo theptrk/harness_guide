@@ -65,4 +65,23 @@ def get_input_items(path: Path) -> list[dict]:
         if entry.get("phase"):
             message["phase"] = entry["phase"]
         items.append(message)
-    return items
+    return without_unanswered_calls(items)
+
+
+def without_unanswered_calls(items: list[dict]) -> list[dict]:
+    """Drop function calls that have no matching output.
+
+    Writing happens one item at a time, so killing the process between a
+    `function_call` and its `function_call_output` leaves a call unanswered on
+    disk. The API rejects input containing one, which would make the file
+    unusable for the rest of the conversation. Leaving the call out is a read
+    of a truncated record, not a repair of the file.
+    """
+    answered = {
+        item["call_id"] for item in items if item.get("type") == "function_call_output"
+    }
+    return [
+        item
+        for item in items
+        if item.get("type") != "function_call" or item["call_id"] in answered
+    ]

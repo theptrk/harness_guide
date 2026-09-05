@@ -128,6 +128,22 @@ history.append_item(
 
 The next pass starts by calling `get_input_items()` again. The model receives the user request, every previous function call, and every result. Nothing in the agent loop carries a separate conversation list between passes.
 
+Reading the file every pass is what makes an unanswered call expensive. A `function_call` with no `function_call_output` for the same `call_id` is invalid model input, and the file is the input. One bad pair does not fail one request; it fails every request against that conversation from then on.
+
+The loop appends the output even when the tool raised:
+
+```python
+except Exception as error:
+    failure = error
+    tool_result = f"{type(error).__name__}: {error}"
+
+history.append_item(chat_file_path, {...})
+if failure is not None:
+    raise failure
+```
+
+`run_turn()` still gives up on the request. The model does not see the error and does not get to correct it. All this does is leave the record in a state the next question can be asked from. Level 4 is where the error goes back to the model.
+
 ---
 
 ## Done when
@@ -144,6 +160,10 @@ The next pass starts by calling `get_input_items()` again. The model receives th
    - Three matching `tool ‹` timestamps.
    - One final answer containing all three cities.
    - A usage line reporting `4 model call(s)`.
+4. Enter `Use get_current_time with the timezone Mars/Olympus.` The turn ends with `call failed`.
+5. Ask for the time in Tokyo again. It answers, and the earlier failure is still in the record.
+6. Interrupt a turn with Ctrl-C while a tool line is on screen, then ask another question.
+   It answers. `get_input_items()` left the unanswered call out of the request.
 
 ---
 

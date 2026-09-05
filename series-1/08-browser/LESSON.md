@@ -1,6 +1,6 @@
 # Level 8 — Use a browser
 
-## What Level 8 adds
+## What broke
 
 The Level 7 harness already provides enough raw access to automate a browser.
 The model must recognize that route and plan the Playwright setup, script, and

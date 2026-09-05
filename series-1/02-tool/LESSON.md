@@ -160,12 +160,14 @@ arguments = json.loads(tool_call.arguments)
 
 tool_function = TOOL_FUNCTIONS.get(tool_call.name)
 if tool_function is None:
-    raise RuntimeError(f"unknown tool: {tool_call.name}")
+    raise LookupError(f"unknown tool: {tool_call.name}")
 
 tool_result = tool_function(**arguments)
 ```
 
 `.get()` returns `None` for an unknown name, so the code raises an error that names the invalid request instead of exposing a dictionary `KeyError`. The model selected the tool and supplied arguments. Your code selected and ran the corresponding function.
+
+Any of these three lines can raise: malformed JSON, a name the registry does not have, arguments the Python function does not accept. `main.py` wraps them in a `try`, for a reason covered below.
 
 Before running the function, the code writes every item from the response to the conversation file:
 
@@ -225,6 +227,60 @@ This level handles at most one tool call per model response. `parallel_tool_call
 
 ---
 
+## Every call on disk needs its output
+
+The `call_id` pairing is a rule the API enforces. Send an `input` list holding a `function_call` with no `function_call_output` for that `call_id` and the request is rejected. The rejection is not limited to one turn: the file is the input list, so an unanswered call breaks every later request against that conversation.
+
+The file gets the call before Python runs the function, so anything that goes wrong in between has to write an output anyway:
+
+```python
+failure = None
+try:
+    arguments = json.loads(tool_call.arguments)
+    tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+    if tool_function is None:
+        raise LookupError(f"unknown tool: {tool_call.name}")
+    tool_result = tool_function(**arguments)
+except Exception as error:
+    failure = error
+    tool_result = f"{type(error).__name__}: {error}"
+
+history.append_item(chat_file_path, {...})
+if failure is not None:
+    raise failure
+```
+
+The turn still ends. `main()` prints `call failed` and the model never reads that output. Writing it keeps the record valid for the next question. Level 4 goes further and hands the error to the model instead of ending the turn.
+
+The second call this level refuses to run needs an output for the same reason:
+
+```python
+{
+    "type": "function_call_output",
+    "call_id": next_tool_call.call_id,
+    "output": "not run: this level handles one tool call per turn",
+}
+```
+
+Refusing to run a call and leaving it unanswered are different things. The first ends the turn. The second ends the conversation.
+
+A process killed between the two writes leaves an unanswered call no `except` can catch. `get_input_items()` reads around it:
+
+```python
+answered = {
+    item["call_id"] for item in items if item.get("type") == "function_call_output"
+}
+return [
+    item
+    for item in items
+    if item.get("type") != "function_call" or item["call_id"] in answered
+]
+```
+
+The line stays on disk. It is left out of the list sent to the API.
+
+---
+
 ## Done when
 
 1. Start a new conversation:
@@ -239,6 +295,10 @@ This level handles at most one tool call per model response. `parallel_tool_call
    - A `tool ‹` result containing an ISO timestamp.
    - A final answer giving the Tokyo time.
    - A usage line reporting `2 model call(s)`.
+4. Enter `Use get_current_time with the timezone Mars/Olympus.` The turn ends with `call failed`.
+5. Ask for the time in Tokyo again. It answers. A failed tool did not cost you the conversation.
+6. Read the newest file in `chats/` and confirm every `function_call` line has a
+   `function_call_output` line with the same `call_id`, including the one that failed.
 
 ---
 
