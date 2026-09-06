@@ -1,12 +1,12 @@
-# Level 7 — Use a browser
+# Level 8 — Use a browser
 
-## What Level 7 adds
+## What broke
 
-The Level 6 harness already provides enough raw access to automate a browser.
+The Level 7 harness already provides enough raw access to automate a browser.
 The model must recognize that route and plan the Playwright setup, script, and
 command. Success therefore depends on the model and its reasoning budget.
 
-Level 7 moves that work into the harness. You install Chromium once, and
+Level 8 moves that work into the harness. You install Chromium once, and
 `browser_tools.py` starts and preserves the browser page. The model only has to
 choose among `open_page`, `read_page`, `type_text`, and `click`.
 
@@ -15,7 +15,7 @@ choose among `open_page`, `read_page`, `type_text`, and `click`.
 ## Install Chromium once
 
 Playwright is a Python dependency, but its browser binary is installed
-separately. Run this once before using Level 7:
+separately. Run this once before using Level 8:
 
 ```sh
 uv run playwright install chromium
@@ -29,10 +29,10 @@ Level 7 asked the model to write `random-button.html` and click it through the
 shell. Each level has its own workspace, so write the file again here and click
 it with the browser tools.
 
-Start a new Level 7 conversation:
+Start a new Level 8 conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/07-browser/main.py
+uv run --env-file .env series-1-agent-class/08-browser/main.py
 ```
 
 Enter this as one request:
@@ -127,7 +127,7 @@ passes in the model's JSON arguments.
 
 ## What is in browser_tools.py
 
-Level 7 adds one module, `browser_tools.py`. `main.py` imports that module,
+Level 8 adds one module, `browser_tools.py`. `main.py` imports that module,
 builds one `Browser`, hands it to the agent, and calls `agent.close()` when the
 CLI exits. The existing agent loop still handles every `function_call`.
 
@@ -183,7 +183,7 @@ later user turn. A second `Browser` has its own attributes and its own window.
 driver per thread, so the module starts the driver on first use and registers
 `atexit` to stop it. Every `Browser` launches its Chromium from that driver.
 
-Chromium is visible by default. `main()` reads `LEVEL8_HEADLESS` and passes
+Chromium is visible by default. `main()` reads `BROWSER_HEADLESS` and passes
 `headless=True` to `Browser` when it is set to `1`.
 
 ---
@@ -217,7 +217,7 @@ url = path.as_uri()
 ```
 
 `as_uri()` performs the path-to-URL conversion. `workspace.resolve_path()`
-reuses Level 6's containment check so a browser tool cannot open an arbitrary
+reuses Level 7's containment check so a browser tool cannot open an arbitrary
 local file.
 
 ---
@@ -394,7 +394,7 @@ caller that forgets `close()` leaves nothing running.
 ## Done when
 
 1. Run `uv run playwright install chromium`.
-2. Run `uv run --env-file .env series-1-agent-class/07-browser/main.py`.
+2. Run `uv run --env-file .env series-1-agent-class/08-browser/main.py`.
 3. Enter the `random-button.html` request under **Run it**.
 4. Confirm a file tool writes `random-button.html` in this level's workspace.
 5. Confirm `open_page` opens that file and lists a button.
@@ -431,10 +431,9 @@ this lesson supports. It is not a required `Done when` step.
 
 ## What breaks next
 
-The browser can search Google, but Google may return a CAPTCHA instead of search
-results. Completing it manually works, but public web search should not require
-driving a search-engine page or asking a person for help.
+Tell the agent a fact, exit with `Ctrl-D`, restart Level 8, and ask for that
+fact. The browser and workspace persist their own state, but the conversation
+was stored only in `Agent.input_items` and is gone.
 
-The first chapter of [Advanced Agent Concepts](../../roadmap-intermediate.md)
-adds a hosted web-search tool. The model can retrieve public information with
-cited sources while keeping the browser for pages that require interaction.
+[Level 9](../09-persistence/LESSON.md) stores completed conversation items in
+an append-only JSONL file.

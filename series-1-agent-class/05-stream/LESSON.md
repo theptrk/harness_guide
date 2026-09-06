@@ -1,12 +1,12 @@
-# Level 4 — Stream it
+# Level 5 — Stream it
 
 ## What broke
 
 Level 3 prints nothing from a model call until the complete response arrives. Ask for several paragraphs and the terminal stays unchanged while the model generates all of them.
 
-Level 4 prints each text fragment as the API sends it. After the stream ends, it retains the complete response item for the next model call.
+Level 5 prints each text fragment as the API sends it. After the stream ends, it retains the complete response item for the next model call.
 
-As in Level 3, the active turn stays in memory and reaches the in-memory conversation only after the model returns a final answer.
+Level 4's protocol safety remains in force: responses are validated before tools run, tool failures become tool results, tool execution is bounded, and only completed turns reach the in-memory conversation.
 
 The CLI loop in `main()` still passes each terminal message to
 `agent.handle_message()`. This level changes how that method receives and records
@@ -19,7 +19,7 @@ the model response.
 Start the agent:
 
 ```sh
-uv run --env-file .env series-1-agent-class/04-stream/main.py
+uv run --env-file .env series-1-agent-class/05-stream/main.py
 ```
 
 It waits for a message.
@@ -56,7 +56,7 @@ Level 3 calls:
 response = client.responses.create(...)
 ```
 
-Level 4 adds `stream=True`. Instead of returning one `Response`, the call returns an iterator of events. Each event has a `type` property that identifies the data it contains.
+Level 5 adds `stream=True`. Instead of returning one `Response`, the call returns an iterator of events. Each event has a `type` property that identifies the data it contains.
 
 A text event contains a fragment at `event.delta`:
 
@@ -191,7 +191,7 @@ The SDK can retry some failures before a stream begins. Once output has arrived,
 1. Start a new conversation:
 
    ```sh
-   uv run --env-file .env series-1-agent-class/04-stream/main.py
+   uv run --env-file .env series-1-agent-class/05-stream/main.py
    ```
 
 2. Enter `Explain in six short bullet points how UTC offsets work.`
@@ -220,4 +220,4 @@ Ask it to create a file:
 
 That is the complete response from one run. No `profile.md` file was created. You still have to copy the text into an editor.
 
-[Level 5](../05-files/LESSON.md) adds confined file tools.
+[Level 6](../06-files/LESSON.md) adds confined file tools.

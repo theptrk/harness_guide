@@ -1,23 +1,23 @@
-# Level 8 — Persist conversations
+# Level 9 — Persist conversations
 
-## What Level 8 adds
+## What broke
 
-Level 7 keeps the conversation in `Agent.input_items`. Closing the process loses
-that list. This optional level replaces the list with an append-only JSONL file.
+Level 8 keeps the conversation in `Agent.input_items`. Closing the process loses
+that list. Level 9 replaces the list with an append-only JSONL file.
 
 Persistence is useful in a real harness, but it is separate from the agent loop.
 The model still receives the same list of Responses API items.
 
-Run it:
+## Run it
 
 ```sh
-uv run --env-file .env series-1-agent-class/08-persistence/main.py --new
+uv run --env-file .env series-1-agent-class/09-persistence/main.py --new
 ```
 
 Omit `--new` to continue the most recently created conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/08-persistence/main.py
+uv run --env-file .env series-1-agent-class/09-persistence/main.py
 ```
 
 ## The storage module
@@ -74,15 +74,15 @@ have happened.
 After a conversation, inspect its lines:
 
 ```sh
-ls -t series-1-agent-class/08-persistence/chats/
-cat series-1-agent-class/08-persistence/chats/*.jsonl
+ls -t series-1-agent-class/09-persistence/chats/
+cat series-1-agent-class/09-persistence/chats/*.jsonl
 ```
 
 Each function call is followed by a `function_call_output` with the same
 `call_id`. Keeping every API item allows the next process to reconstruct valid
 model input without inventing a second conversation format.
 
-## Check it yourself
+## Done when
 
 1. Start with `--new` and tell the agent a distinctive fact.
 2. Exit with `Ctrl-D`.
@@ -90,3 +90,12 @@ model input without inventing a second conversation format.
 4. Restart with `--new` and ask again. The new conversation should not contain it.
 5. Interrupt a turn with `Ctrl-C`, restart, and confirm the interrupted request
    was not added to the JSONL file.
+
+## What breaks next
+
+Transient API failures can still end a turn immediately, and model requests
+have no configured timeout. The terminal also needs an explicit policy for
+failures that the agent cannot recover from.
+
+[Level 10](../10-operational/LESSON.md) adds operational policy for the complete
+persistent agent.

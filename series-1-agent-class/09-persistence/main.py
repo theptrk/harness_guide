@@ -1,6 +1,7 @@
-"""Level 6 — run approved shell commands from the confined workspace.
+"""Level 9 — persist completed conversations as JSONL.
 
-    uv run --env-file .env series-1-agent-class/06-shell/main.py
+    uv run --env-file .env series-1-agent-class/09-persistence/main.py
+    uv run --env-file .env series-1-agent-class/09-persistence/main.py --new
 """
 
 import json
@@ -8,20 +9,25 @@ import os
 import sys
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 
+import browser_tools
 import file_tools
+import history
 import shell_tools
 
 MODEL = "gpt-5.6-luna"
 SYSTEM_PROMPT = (
-    "You are a concise coding assistant. Use the tools to inspect and modify files "
-    "and run commands in your workspace. Every shell command requires approval. "
-    "A denied command is a final decision: "
-    "do not request the same denied action again unless the person explicitly asks. "
-    "Do not claim an action succeeded unless its tool result says it did."
+    "You are a concise coding assistant. Use the tools to inspect and modify files, "
+    "run commands, and operate one persistent browser page. Every shell command "
+    "requires approval. A denied command is a final decision: do not request the "
+    "same denied action again unless the person explicitly asks. If a page requires "
+    "a CAPTCHA or other human verification, ask the person to complete it in the "
+    "visible browser and tell you when they are done. Do not claim an action "
+    "succeeded unless its tool result says it did."
 )
 TOOL_CALL_LIMIT = 5
 
@@ -43,7 +49,12 @@ TIME_TOOL = {
     "strict": True,
 }
 
-TOOLS = [TIME_TOOL] + file_tools.TOOLS + [shell_tools.RUN_COMMAND_TOOL]
+TOOLS = (
+    [TIME_TOOL]
+    + file_tools.TOOLS
+    + [shell_tools.RUN_COMMAND_TOOL]
+    + browser_tools.TOOLS
+)
 
 
 def get_current_time(timezone: str) -> str:
@@ -60,25 +71,34 @@ def get_current_time(timezone: str) -> str:
 Emit = Callable[[dict], None]
 
 
+class HarnessError(RuntimeError):
+    """The model returned output the harness cannot safely continue from."""
+
+
 class Agent:
-    """One model client and one conversation.
+    """One model client, one persistent conversation, and one browser.
 
     The agent never prints and never reads the keyboard. It reports each step
     of a turn through emit and asks about shell commands through approve.
+    Call close() when done so the browser it owns is closed.
     """
 
     def __init__(
         self,
         client: OpenAI,
+        browser: browser_tools.Browser,
+        chat_file_path: Path,
         *,
         emit: Emit,
         approve: shell_tools.ApprovalFunction,
     ):
         self.client = client
+        self.browser = browser
+        self.chat_file_path = chat_file_path
         self.emit = emit
         self.approve = approve
-        self.input_items = []
-        # Built per agent because run_command needs this agent's approve.
+        # Built per agent: run_command needs this agent's approve, and the
+        # browser tools are methods of this agent's browser.
         self.tool_functions = {
             "get_current_time": get_current_time,
             "list_files": file_tools.list_files,
@@ -86,7 +106,31 @@ class Agent:
             "write_file": file_tools.write_file,
             "edit_file": file_tools.edit_file,
             "run_command": self._run_command,
+            "open_page": self.browser.open_page,
+            "read_page": self.browser.read_page,
+            "type_text": self.browser.type_text,
+            "click": self.browser.click,
         }
+
+    @staticmethod
+    def _require_complete(response) -> None:
+        """Reject output that is unsafe to execute or retain."""
+        if response.status == "completed":
+            return
+        if response.status == "incomplete":
+            reason = response.incomplete_details.reason if response.incomplete_details else "unknown"
+            raise HarnessError(
+                f"model response incomplete: {reason}; no tool from this response was executed"
+            )
+        if response.error is not None:
+            raise HarnessError(
+                f"model response failed: {response.error.code}: {response.error.message}"
+            )
+        raise HarnessError(f"model response ended with status {response.status}")
+
+    def close(self) -> None:
+        """Release what this agent owns. Safe to call if the browser never started."""
+        self.browser.close()
 
     def _run_command(self, command: str) -> str:
         """Run one shell command after this agent's approve function says yes."""
@@ -131,15 +175,20 @@ class Agent:
                 }:
                     self.emit({"type": "text", "text": event.delta})
                     text_started = True
-                elif event.type == "response.completed":
+                elif event.type in {
+                    "response.completed",
+                    "response.incomplete",
+                    "response.failed",
+                }:
                     final_response = event.response
 
         if final_response is None:
-            raise RuntimeError("model stream ended without a terminal response")
+            raise HarnessError("model stream ended without a terminal response")
         return final_response, text_started
 
     def handle_message(self, said: str) -> None:
         """Run one user request until the model returns an answer."""
+        input_items = history.get_input_items(self.chat_file_path)
         turn_items = [{"role": "user", "content": said}]
         model_calls = 0
         tool_calls = 0
@@ -150,13 +199,14 @@ class Agent:
         while True:
             response, text_was_streamed = self._stream_response(
                 model_calls + 1,
-                self.input_items + turn_items,
+                input_items + turn_items,
                 force_answer,
             )
             model_calls += 1
             if response.usage is not None:
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
+            self._require_complete(response)
             turn_items.extend(
                 item.model_dump(mode="json", exclude_none=True)
                 for item in response.output
@@ -175,7 +225,7 @@ class Agent:
                     self.emit({"type": "text", "text": response.output_text})
                 break
             if force_answer:
-                raise RuntimeError("model requested a tool after tool use was disabled")
+                raise HarnessError("model requested a tool after tool use was disabled")
 
             self.emit({"type": "tool", "name": tool_call.name, "arguments": tool_call.arguments})
             if tool_calls >= TOOL_CALL_LIMIT:
@@ -197,7 +247,7 @@ class Agent:
                 },
             )
 
-        self.input_items.extend(turn_items)
+        history.append_items(self.chat_file_path, turn_items)
         self.emit(
             {
                 "type": "done",
@@ -269,28 +319,47 @@ class Terminal:
 def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+    headless = os.getenv("BROWSER_HEADLESS", "").lower() in {"1", "true", "yes"}
+
+    if "--new" in sys.argv:
+        chat_file_path = history.new_chat()
+    else:
+        chat_file_path = history.latest_chat() or history.new_chat()
 
     terminal = Terminal()
-    agent = Agent(OpenAI(), emit=terminal.emit, approve=terminal.approve)
-    print("[workspace: series-1-agent-class/06-shell/agent_workspace]")
+    agent = Agent(
+        OpenAI(),
+        browser_tools.Browser(headless=headless),
+        chat_file_path,
+        emit=terminal.emit,
+        approve=terminal.approve,
+    )
+    input_items = history.get_input_items(chat_file_path)
+    print(f"[{chat_file_path.name} · {len(input_items)} input items so far]")
+    print("[workspace: series-1-agent-class/09-persistence/agent_workspace]")
     print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
-    while True:
-        try:
-            said = input("📝 you › ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not said:
-            continue
+    try:
+        while True:
+            try:
+                said = input("📝 you › ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not said:
+                continue
 
-        try:
-            agent.handle_message(said)
-        except KeyboardInterrupt:
-            print("\n[turn interrupted]")
-            break
-        except Exception as error:
-            print(f"call failed: {error}", file=sys.stderr)
+            try:
+                agent.handle_message(said)
+            except KeyboardInterrupt:
+                print("\n[turn interrupted]")
+                break
+            except HarnessError as error:
+                print(f"harness failed: {error}", file=sys.stderr)
+            except Exception as error:
+                print(f"call failed: {error}", file=sys.stderr)
+    finally:
+        agent.close()
 
 
 if __name__ == "__main__":

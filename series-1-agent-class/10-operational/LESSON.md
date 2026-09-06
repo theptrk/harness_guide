@@ -1,34 +1,35 @@
-# Level 9 — Harden the complete agent
+# Level 10 — Add operational policy
 
-## What Level 9 adds
+## What broke
 
-Level 8 has the complete capability path: streaming, files, shell commands, a
-browser, and persistent conversations. This final level keeps those capabilities
-and adds cross-cutting failure policy around the model API:
+Level 9 has the complete capability path, but its model client has no explicit
+retry or timeout policy. A transient API failure ends the turn immediately. A
+completed refusal can also leave `response.output_text` empty even though the
+model returned content.
 
-- the OpenAI client retries transient API failures and uses a request timeout;
-- an optional `MAX_OUTPUT_TOKENS` setting places a bound on model output;
-- every terminal response is checked before any returned tool call is executed;
-- terminal answer extraction handles both normal text and refusals;
-- expected API and harness failures raise out of the agent; `main()` prints a
-  short message and exits.
+Level 10 keeps every capability and adds operational policy:
 
-Tool-call limits and model-readable tool errors were introduced with the agent
-loop, where those behaviors first became necessary. They remain in this final
-agent, but they are not new here.
+- SDK retries for transient API failures and an SDK request timeout;
+- an optional `MAX_OUTPUT_TOKENS` output cap;
+- terminal answer extraction for normal text and refusals;
+- a terminal exit policy for API and harness failures.
+
+Response validation, model-readable tool errors, and tool-call limits remain
+in force from Level 4. They are retained safety rules, not additions in this
+level.
 
 ## Run it
 
 Start a new persistent conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/09-harden/main.py --new
+uv run --env-file .env series-1-agent-class/10-operational/main.py --new
 ```
 
 Omit `--new` to continue the newest conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/09-harden/main.py
+uv run --env-file .env series-1-agent-class/10-operational/main.py
 ```
 
 ## Retry and timeout policy
@@ -45,11 +46,12 @@ timeout does not bound file tools, shell commands, or browser operations; those
 tools need their own limits because cancelling the wait for a tool does not
 necessarily stop its side effect.
 
-## Validate before executing tools
+## Response validation remains in force
 
-A successful HTTP exchange can still produce an incomplete or failed model
-response. `self._require_complete(response)` runs before response output is added to
-the active turn and before a function call can be dispatched:
+Level 4 established that a response must be complete before any returned tool
+call runs. This level retains that check. `self._require_complete(response)`
+runs before response output is added to the active turn and before a function
+call can be dispatched:
 
 ```python
 response, text_was_streamed = self._stream_response(...)
@@ -72,8 +74,8 @@ transactions are separate concerns.
 
 ## Validate terminal answer content
 
-Earlier levels use `response.output_text` directly when a stream produces no
-visible text. The hardened agent also recognizes refusals, which are a distinct
+Level 5 uses `response.output_text` directly when a stream produces no visible
+text. This level also recognizes refusals, which are a distinct
 message-content type, and rejects a completed response that contains neither:
 
 ```python
@@ -100,7 +102,7 @@ additional failure mode that the final agent must handle:
 
 ```sh
 printf '%s\n' 'Use get_current_time to tell me the current time in Tokyo.' |
-  MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1-agent-class/09-harden/main.py --new
+  MAX_OUTPUT_TOKENS=16 uv run --env-file .env series-1-agent-class/10-operational/main.py --new
 ```
 
 The expected result is a short failure such as:
@@ -111,11 +113,12 @@ harness failed: model response incomplete: max_output_tokens; no tool from this 
 
 The setting is optional. Without it, the request omits `max_output_tokens`.
 
-## Tool failures still belong to the loop
+## Level 4 tool safety remains in force
 
-A completed function call always needs a matching `function_call_output`,
-including when the Python tool fails. `self._run_tool()` converts failures into
-a readable string so the model can correct an argument or explain the problem:
+Level 4 requires a matching `function_call_output` for every completed function
+call, including when the Python tool fails. This level retains
+`self._run_tool()`, which converts failures into a readable string so the model
+can correct an argument or explain the problem:
 
 ```python
 try:
@@ -128,7 +131,7 @@ except Exception as error:
     return f"{type(error).__name__}: {error}"
 ```
 
-The executed-tool budget also remains in force. Once the budget is exhausted,
+The Level 4 executed-tool budget also remains in force. Once the budget is exhausted,
 the loop returns a `ToolCallLimit` result and makes the next request with
 `tool_choice="none"`.
 
@@ -167,5 +170,5 @@ variables.
 6. Inspect `main.py` and confirm `self._require_complete(response)` occurs before
    `self._run_tool(tool_call)` can execute a returned call.
 
-This is the end of the series: the earlier lessons build capabilities one at a
-time, and this lesson adds the cross-cutting operational policy last.
+This is the end of the series. The earlier lessons add capabilities one at a
+time. This lesson adds operational policy to the complete agent.

@@ -1,7 +1,7 @@
 """Level 0 — call a model.
 
-    uv run --env-file .env series-1-agent-class/00-model/main.py "why is the sky blue"
-    uv run --env-file .env series-1-agent-class/00-model/main.py --raw "why is the sky blue"
+    uv run --env-file .env series-1-agent-class/00-model/main.py
+    uv run --env-file .env series-1-agent-class/00-model/main.py --raw
 
 --raw prints the whole response object before the answer. Reference for what
 you're looking at:
@@ -37,11 +37,18 @@ class Agent:
 def main() -> None:
     args = sys.argv[1:]
     raw = "--raw" in args
-    question = " ".join(a for a in args if a != "--raw")
-    if not question:
-        sys.exit('usage: main.py [--raw] "your question"')
+    if any(arg != "--raw" for arg in args):
+        sys.exit("usage: main.py [--raw]  (enter your question at the prompt)")
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.")
+
+    try:
+        question = input("📝 you › ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if not question:
+        return
 
     # OpenAI() reads OPENAI_API_KEY from the environment. The key is never in this file.
     agent = Agent(OpenAI())

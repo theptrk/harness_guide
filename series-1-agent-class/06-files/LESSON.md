@@ -1,8 +1,8 @@
-# Level 5 — Give it files
+# Level 6 — Give it files
 
 ## What broke
 
-At the end of Level 4, the model returned:
+At the end of Level 5, the model returned:
 
 ```text
 📝 you › Create profile.md. Record that my name is Patrick and my favorite fruit is strawberries.
@@ -17,7 +17,7 @@ At the end of Level 4, the model returned:
 
 It produced the right document as answer text, but no file existed.
 
-Level 5 adds four tools:
+Level 6 adds four tools:
 
 - `list_files` lists one directory.
 - `read_file` reads a line window from one UTF-8 text file.
@@ -38,12 +38,12 @@ The prompt tells the model when to use the new capability. The tool result remai
 Every operation is confined to:
 
 ```text
-series-1-agent-class/05-files/agent_workspace/
+series-1-agent-class/06-files/agent_workspace/
 ```
 
 `agent_workspace` is an ordinary directory beside this level's code. The program
 creates it when a file tool first runs. Tool paths are relative to it, so
-`profile.md` means `series-1-agent-class/05-files/agent_workspace/profile.md`. Each level has
+`profile.md` means `series-1-agent-class/06-files/agent_workspace/profile.md`. Each level has
 its own `agent_workspace`.
 
 ---
@@ -51,13 +51,13 @@ its own `agent_workspace`.
 ## Run it
 
 ```sh
-uv run --env-file .env series-1-agent-class/05-files/main.py
+uv run --env-file .env series-1-agent-class/06-files/main.py
 ```
 
 The startup text names the only directory the tools can access:
 
 ```text
-[workspace: series-1-agent-class/05-files/agent_workspace]
+[workspace: series-1-agent-class/06-files/agent_workspace]
 ```
 
 Ask:
@@ -88,7 +88,7 @@ The `content` argument shows exactly what the model asked Python to write. Compa
 Press `Ctrl-D` and start a separate conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/05-files/main.py
+uv run --env-file .env series-1-agent-class/06-files/main.py
 ```
 
 First ask without letting it inspect the workspace:
@@ -125,11 +125,11 @@ Verify the edit:
 
 ## From a tool request to the filesystem
 
-The CLI and agent loops are the same as Level 4. `main()` still calls only
-`agent.handle_message(said)`. Level 5 adds entries to the tool list and function
+The CLI and agent loops are the same as Level 5. `main()` still calls only
+`agent.handle_message(said)`. Level 6 adds entries to the tool list and function
 registry used by the clock:
 
-Levels 2 through 5 wrote the clock schema inline in a list named `TOOLS`. This
+Earlier levels wrote the clock schema inline in a list named `TOOLS`. This
 level names that schema `TIME_TOOL` so it can sit next to `file_tools.TOOLS`.
 
 ```python
@@ -225,9 +225,10 @@ Without the containment check, `..` would move out of the workspace and expose
 the program's source file. The tool should instead return a
 `WorkspacePathError`.
 
-Level 5 also makes expected tool failures recoverable. `_run_tool()` catches a
-tool exception and returns its type and message as tool output, so the model can
-explain a rejected path instead of ending the turn:
+Level 4 already made expected tool failures recoverable. File operations add
+specific failures such as rejected paths, missing files, and ambiguous edits.
+The same `_run_tool()` rule returns each exception's type and message as tool
+output, so the model can explain or correct the file request:
 
 ```python
 def _run_tool(self, tool_call) -> str:
@@ -369,10 +370,10 @@ The retrieval is manual in this level: the user explicitly asks the model to rea
 
 ## Done when
 
-1. Start Level 5:
+1. Start Level 6:
 
    ```sh
-   uv run --env-file .env series-1-agent-class/05-files/main.py
+   uv run --env-file .env series-1-agent-class/06-files/main.py
    ```
 
 2. Enter:
@@ -392,21 +393,22 @@ The retrieval is manual in this level: the user explicitly asks the model to rea
 5. Press `Ctrl-D`, then start a new conversation:
 
    ```sh
-   uv run --env-file .env series-1-agent-class/05-files/main.py
+   uv run --env-file .env series-1-agent-class/06-files/main.py
    ```
 
-6. Confirm that the header reports `0 input items so far`.
-7. Enter:
+6. Enter:
 
    ```text
    Without using tools, what is my name and favorite fruit? If they are not in this conversation, say you do not know.
    ```
 
-8. Confirm that the model says it does not know either fact.
-9. Enter `Use read_file to read profile.md. What is my name and favorite fruit?` Confirm that it answers `Patrick` and `strawberries`.
-10. Enter `Use edit_file to change my favorite fruit from strawberries to mangoes.`
-11. Enter `Use read_file to read profile.md. What is my favorite fruit now?` Confirm that it answers `mangoes`.
-12. Enter `Use read_file to read ../main.py.` Confirm that the tool result contains `"type": "WorkspacePathError"` and does not contain the file contents.
+7. Confirm that the model says it does not know either fact.
+8. Enter `Use read_file to read profile.md. What is my name and favorite fruit?` Confirm that it answers `Patrick` and `strawberries`.
+9. Enter `Use edit_file to change my favorite fruit from strawberries to mangoes.`
+10. Enter `Use read_file to read profile.md. What is my favorite fruit now?` Confirm that it answers `mangoes`.
+11. Enter `Use read_file to read ../main.py.` Confirm that the tool result is a
+    plain `WorkspacePathError: ...` string, not a JSON object, and does not
+    contain the file contents.
 
 ---
 
@@ -423,4 +425,4 @@ then read it with `offset` 1 and `limit` 200. The result should have
 
 Ask it to write a Python script that converts `profile.md` to JSON. It can create the script but cannot run it, inspect the output, or correct an error.
 
-Level 6 will add shell access and an approval gate.
+Level 7 will add shell access and an approval gate.

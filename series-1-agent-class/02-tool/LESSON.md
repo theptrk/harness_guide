@@ -1,17 +1,35 @@
 # Level 2 — Give it one tool
 
-Level 1 can converse, but it has no live clock. This level gives the model one
-function tool, `get_current_time`.
+## What broke
+
+Level 1 can retain a conversation, but it can only produce model text. Asking
+for the exact current time requires data that the harness does not provide.
+
+Level 2 keeps the same terminal loop and gives the model one function tool,
+`get_current_time`. It allows at most one tool call in a turn.
+
+## Run it
 
 ```sh
 uv run --env-file .env series-1-agent-class/02-tool/main.py
 ```
 
-Ask:
+Ask the model to use the tool:
 
 ```text
 📝 you › Use get_current_time to tell me the current time in Tokyo.
+
+tool › get_current_time({"timezone":"Asia/Tokyo"})
+tool ‹ {
+  "timezone": "Asia/Tokyo",
+  "datetime": "..."
+}
+
+🤖 model › The current time in Tokyo is ...
+    [2 model call(s) · 1 tool call(s) · ...]
 ```
+
+The timestamp and answer will differ. The event order should not.
 
 The model does not execute Python. The tool definition tells it what it may
 request. The harness receives that request, selects the matching Python
@@ -31,12 +49,13 @@ TOOL_FUNCTIONS = {
 `strict: True` constrains the generated argument shape. Python still validates
 whether a value such as `Asia/Tokyo` is meaningful.
 
-## The agent reports, the terminal prints
+## Emit observable steps
 
 A turn now has up to two model calls with a tool call between them. The tool
-call should appear in the terminal before the second model call starts, and
-`handle_message()` can no longer return one response. So `Agent` takes an
-`emit` function when it is created and calls it once per step:
+request and result are observable before the final answer. Returning only after
+the turn ends would hide those intermediate steps from the host.
+
+`Agent` therefore requires an `emit` callback and calls it once per step:
 
 ```python
 agent = Agent(OpenAI(), emit=print_event)
@@ -105,9 +124,13 @@ turn_items.append(
 ```
 
 Both calls receive `self.input_items + turn_items`. The matching `call_id`
-connects the result to the request. After the second response, the harness
-checks for another tool request. Level 2 deliberately raises an error if it
-finds one:
+connects the result to the request.
+
+## Check completion
+
+The control flow is fixed: call the model, optionally run one tool, then call
+the model once more. After the second response, the harness checks for another
+tool request. Level 2 raises an error if it finds one:
 
 ```python
 next_tool_call = next(
@@ -120,7 +143,14 @@ if next_tool_call is not None:
 answer = response.output_text
 ```
 
-Otherwise, the completed turn is committed with:
+The final answer must also contain text:
+
+```python
+if not answer:
+    raise RuntimeError("model returned no answer")
+```
+
+Only after both checks pass is the completed turn committed:
 
 ```python
 self.input_items.extend(turn_items)
@@ -130,9 +160,19 @@ A completed round trip contains the user item, function call, function result,
 and final model message. All four stay in memory and become input to the next
 user message.
 
-The control flow is therefore a fixed sequence: call the model, optionally run
-one tool, then call the model once more. Ask for the time in Tokyo and New York
-to see the explicit one-tool error.
+## Done when
+
+1. Ask a question that needs no tool. Confirm `done` reports one model call and
+   zero tool calls.
+2. Ask for the time in Tokyo. Confirm the event order is `tool`,
+   `tool_result`, `text`, `done`.
+3. Confirm `done` reports two model calls and one tool call.
+4. Ask for separate time lookups for Tokyo and New York. If the second response
+   requests another tool, confirm the terminal prints `call failed`.
+
+## What breaks next
+
+A turn that needs two tool calls reaches the explicit one-tool check and fails.
 
 [Level 3](../03-loop/LESSON.md) keeps `_run_tool()`, the response-item search,
 the counters, and the conversation bookkeeping unchanged. It moves the model

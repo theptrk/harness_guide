@@ -1,8 +1,8 @@
-# Level 6 — Run a command
+# Level 7 — Run a command
 
 ## What broke
 
-Level 5 can create a Python script:
+Level 6 can create a Python script:
 
 ```text
 📝 you › Create hello.py with a print statement, then run it.
@@ -11,7 +11,7 @@ Level 5 can create a Python script:
 It can call `write_file`, but its tool list has no command runner. No Python
 process starts, and the model receives no exit code, stdout, or stderr.
 
-Level 6 adds one tool that runs a shell command and returns those values to the
+Level 7 adds one tool that runs a shell command and returns those values to the
 model.
 
 ---
@@ -19,20 +19,20 @@ model.
 ## Run it
 
 ```sh
-uv run --env-file .env series-1-agent-class/06-shell/main.py
+uv run --env-file .env series-1-agent-class/07-shell/main.py
 ```
 
 Create a small script:
 
 ```text
 📝 you › Use write_file to create hello.py with exactly:
-print("hello from level 6")
+print("hello from level 7")
 ```
 
 The tool trace includes:
 
 ```text
-tool › write_file({"path":"hello.py","content":"print(\"hello from level 6\")"})
+tool › write_file({"path":"hello.py","content":"print(\"hello from level 7\")"})
 tool ‹ {
   "path": "hello.py",
   "written": true,
@@ -61,7 +61,7 @@ Type `yes`. The tool result contains:
   "command": "python hello.py",
   "approved": true,
   "exit_code": 0,
-  "stdout": "hello from level 6\n",
+  "stdout": "hello from level 7\n",
   "stderr": "",
   "timed_out": false,
   "error": null
@@ -80,8 +80,6 @@ The file tools provide the program; `run_command` executes it. Together they let
 the agent create and run code inside the workspace.
 
 ---
-
-
 
 ## The new tool
 
@@ -148,8 +146,6 @@ A host without a keyboard passes a different function.
 
 ---
 
-
-
 ## Python runs the command
 
 After approval, `run_command()` calls:
@@ -170,7 +166,7 @@ completed = subprocess.run(
 `cwd` makes relative paths start in:
 
 ```text
-series-1-agent-class/06-shell/agent_workspace/
+series-1-agent-class/07-shell/agent_workspace/
 ```
 
 `capture_output=True` gives the harness `stdout` and `stderr`. `check=False`
@@ -184,8 +180,6 @@ The timeout is 30 seconds. It bounds how long the harness waits; it does not
 guarantee that every descendant of an approved shell command has stopped.
 
 ---
-
-
 
 ## The person approves
 
@@ -227,33 +221,29 @@ boundary.
 
 ---
 
-
-
 ## Done when
 
-1. Start a new Level 6 conversation:
+1. Start a new Level 7 conversation:
   ```sh
-   uv run --env-file .env series-1-agent-class/06-shell/main.py
+   uv run --env-file .env series-1-agent-class/07-shell/main.py
   ```
 2. Use `write_file` to create `hello.py` containing
-  `print("hello from level 6")`.
+  `print("hello from level 7")`.
 3. Enter `Use run_command to run exactly: python hello.py`.
 4. Type `yes`. Confirm that the result has exit code `0`, empty `stderr`, and
-  `hello from level 6` in `stdout`.
+  `hello from level 7` in `stdout`.
 5. Request the same command again and press Enter at the approval prompt.
 6. Confirm that the second result has `"approved": false`, a null exit code,
   and no output.
 
 ---
 
+## What breaks next
 
-
-## What the next level improves
-
-Start a new Level 6 conversation:
+Start a new Level 7 conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/06-shell/main.py
+uv run --env-file .env series-1-agent-class/07-shell/main.py
 ```
 
 Enter this as one request:
@@ -285,7 +275,7 @@ that changing the reasoning effort can change how the model uses the same
 tools. More reasoning produced a multi-step plan instead of a refusal, but it
 did not prevent an incorrect assumption about the environment.
 
-The Level 6 harness already provides enough raw access to complete the task. The
+The Level 7 harness already provides enough raw access to complete the task. The
 model must recognize browser automation as a shell solution, check whether
 Playwright and Chromium are available, write a script, run it, and recover if a
 step fails.
@@ -296,7 +286,7 @@ the required actions and arrange them into a working sequence. More reasoning
 effort gives a reasoning model more opportunity to form and check that plan,
 but it does not add tools or permissions.
 
-Level 7 moves that work into the harness. You install Chromium once, and
+Level 8 moves that work into the harness. You install Chromium once, and
 `browser_tools.py` starts and preserves the browser page. The model chooses
 among `open_page`, `read_page`, `type_text`, and `click` instead of writing a
 browser script. A shorter plan makes the task less dependent on model

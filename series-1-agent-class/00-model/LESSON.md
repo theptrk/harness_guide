@@ -1,14 +1,35 @@
 # Level 0 — Call a model
 
-You create one `Agent`, send it a question, and print what comes back. One file,
-one dependency. `main()` builds the OpenAI client and hands it to `Agent`.
-`Agent` makes the request and returns the response. `main()` prints it.
+In this level, you will build the smallest useful model-powered program. It
+reads one question from an interactive prompt, makes one model call, and then
+exits. The program has three steps:
 
-This is the only level with nothing before it, so there's no "here's what broke" to open with. Everything after this one starts with something that doesn't work.
+1. Read a question from the terminal.
+2. Send the question to a model.
+3. Print the model's response.
+
+At a high level, the program works like this:
+
+```python
+question = input("📝 you › ").strip()
+response = agent.handle_message(question)
+print(response)
+```
+
+The model call belongs in an `Agent` class because later levels will add state
+and behavior around it. `main()` handles the terminal interface: it creates the
+OpenAI client and the agent, reads the question, and prints the result.
+`Agent.handle_message()` is responsible only for calling the model and returning
+its response.
+
+This level establishes the foundation for the rest of the series. Each later
+level begins with a limitation in the current implementation and extends the
+agent to address it.
 
 ---
 
-You need `uv` installed and a key in `.env` — that's the [Setup section of the README](../../README.md#setup). Level 8 adds a one-time Chromium install.
+Before continuing, install `uv` and add your API key to `.env` as described in
+the [README setup instructions](../../README.md#setup).
 
 ---
 
@@ -19,10 +40,10 @@ The call returns one object. Two ways to read it:
 - The JSON. What came over the wire. Every field in it is in the HTTP API. `--raw` prints this.
 - Helper properties the OpenAI Python SDK adds on the parsed object. They are not in the JSON. `response.output_text` is one.
 
-Start with `--raw`:
+Start with the default output:
 
 ```sh
-uv run --env-file .env series-1-agent-class/00-model/main.py --raw "why is the sky blue"
+uv run --env-file .env series-1-agent-class/00-model/main.py
 ```
 
 `--env-file .env` loads `OPENAI_API_KEY` from `.env`. Without it, the program
@@ -32,13 +53,26 @@ prints:
 OPENAI_API_KEY is not set. Copy .env.example to .env and put your key in it.
 ```
 
-To avoid repeating the flag, set the environment-file path once:
+To avoid repeating the `--env-file` option, set the environment-file path once:
 
 ```sh
 export UV_ENV_FILE=.env
 ```
 
-Then `uv run series-1-agent-class/00-model/main.py --raw "why is the sky blue"` is equivalent.
+Then `uv run series-1-agent-class/00-model/main.py` is equivalent.
+
+The model's answer prints first. The usage line follows:
+
+```text
+🤖 model › Sunlight contains many colors...
+[27 input + 52 output tokens  0 reasoning tokens  status=completed]
+```
+
+Next, use `--raw` to inspect the complete response object returned by the API:
+
+```sh
+uv run --env-file .env series-1-agent-class/00-model/main.py --raw
+```
 
 The agent holds one OpenAI client and makes one request with it:
 
@@ -56,8 +90,9 @@ class Agent:
         )
 ```
 
-`main()` reads the command-line arguments, creates `Agent(OpenAI())`, and calls
-`agent.handle_message(question)`. It does not make the model request. The
+`main()` reads the optional `--raw` flag, prompts for the question, creates
+`Agent(OpenAI())`, and calls `agent.handle_message(question)`. It does not make
+the model request. The
 agent does not print; `main()` prints the response it gets back.
 
 That `--raw` flag makes the command print the output text twice:
@@ -111,7 +146,6 @@ A truncated sample of the JSON:
 
 Read it against the [Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create) `create` [docs](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Find these in that JSON:
 
-
 | In the JSON                                     | What it's for                                                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `.output[0].type`                               | which kind of item this is. `message` on this call.                                            |
@@ -119,7 +153,6 @@ Read it against the [Responses API](https://developers.openai.com/api/reference/
 | `.usage.input_tokens`, `.usage.output_tokens`   | how many tokens the request used                                                               |
 | `.usage.output_tokens_details.reasoning_tokens` | tokens spent thinking before the visible answer. Included in `output_tokens`. Not in the text. |
 | `model`                                         | which model served the request                                                                 |
-
 
 In the JSON, `reasoning_tokens` is nested under
 `usage.output_tokens_details`. Its count is already included in
@@ -145,20 +178,8 @@ In `openai-python` **v3.2.0** it's [this loop in](https://github.com/openai/open
 uv run python -c "import inspect; from openai.types.responses import Response; print(inspect.getsource(Response.output_text.fget))"
 ```
 
-Now run it without the flag:
-
-```sh
-uv run --env-file .env series-1-agent-class/00-model/main.py "why is the sky blue"
-```
-
-The model's answer prints first. The usage line follows:
-
-```text
-🤖 model › Sunlight contains many colors...
-[27 input + 52 output tokens  0 reasoning tokens  status=completed]
-```
-
-Same call. The difference is only how much of the response you chose to look at.
+Both commands make the same model call. The difference is only how much of the
+response you choose to inspect.
 
 ---
 
@@ -167,7 +188,7 @@ Same call. The difference is only how much of the response you chose to look at.
 ```
 series-1-agent-class/00-model/
   LESSON.md    this file
-  main.py      Agent and the command-line entry point
+  main.py      Agent and the terminal entry point
 ```
 
 The core of the code is this call:
@@ -220,7 +241,7 @@ and measures what happens.
 
 1. Run:
   ```sh
-   uv run --env-file .env series-1-agent-class/00-model/main.py --raw "Why is the sky blue?"
+   uv run --env-file .env series-1-agent-class/00-model/main.py --raw
   ```
 2. Confirm that the terminal shows:
   - A raw response containing `output`, `usage`, `model`, and `status`.
@@ -234,14 +255,15 @@ and measures what happens.
 Try holding a conversation:
 
 ```sh
-uv run --env-file .env series-1-agent-class/00-model/main.py "My name is Patrick."
-uv run --env-file .env series-1-agent-class/00-model/main.py "What is my name?"
+uv run --env-file .env series-1-agent-class/00-model/main.py
+uv run --env-file .env series-1-agent-class/00-model/main.py
 ```
 
 It has no idea. Two separate calls, and the model kept nothing between them.
 
 ```text
-$ uv run --env-file .env series-1-agent-class/00-model/main.py "What is my name?"
+$ uv run --env-file .env series-1-agent-class/00-model/main.py
+📝 you › What is my name?
 I don’t know your name—you haven’t shared it with me.
 ```
 

@@ -1,6 +1,6 @@
-"""Level 5 — give the agent confined file tools.
+"""Level 5 — stream model text and exclude unfinished turns.
 
-    uv run --env-file .env series-1-agent-class/05-files/main.py
+    uv run --env-file .env series-1-agent-class/05-stream/main.py
 """
 
 import json
@@ -12,34 +12,29 @@ from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 
-import file_tools
-
 MODEL = "gpt-5.6-luna"
-SYSTEM_PROMPT = (
-    "You are a concise coding assistant. Use the file tools to inspect and modify "
-    "files in your workspace. Do not claim a file changed unless a tool succeeded."
-)
+SYSTEM_PROMPT = "You are a concise assistant. Answer in a few sentences."
 TOOL_CALL_LIMIT = 5
 
-TIME_TOOL = {
-    "type": "function",
-    "name": "get_current_time",
-    "description": "Get the current date and time in a specific timezone.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "timezone": {
-                "type": "string",
-                "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
-            }
+TOOLS = [
+    {
+        "type": "function",
+        "name": "get_current_time",
+        "description": "Get the current date and time in a specific timezone.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "An IANA timezone name, such as Asia/Tokyo or America/New_York.",
+                }
+            },
+            "required": ["timezone"],
+            "additionalProperties": False,
         },
-        "required": ["timezone"],
-        "additionalProperties": False,
-    },
-    "strict": True,
-}
-
-TOOLS = [TIME_TOOL] + file_tools.TOOLS
+        "strict": True,
+    }
+]
 
 
 def get_current_time(timezone: str) -> str:
@@ -55,13 +50,13 @@ def get_current_time(timezone: str) -> str:
 
 TOOL_FUNCTIONS = {
     "get_current_time": get_current_time,
-    "list_files": file_tools.list_files,
-    "read_file": file_tools.read_file,
-    "write_file": file_tools.write_file,
-    "edit_file": file_tools.edit_file,
 }
 
 Emit = Callable[[dict], None]
+
+
+class HarnessError(RuntimeError):
+    """The model returned output the harness cannot safely continue from."""
 
 
 class Agent:
@@ -76,6 +71,22 @@ class Agent:
         self.client = client
         self.emit = emit
         self.input_items = []
+
+    @staticmethod
+    def _require_complete(response) -> None:
+        """Reject output that is unsafe to execute or retain."""
+        if response.status == "completed":
+            return
+        if response.status == "incomplete":
+            reason = response.incomplete_details.reason if response.incomplete_details else "unknown"
+            raise HarnessError(
+                f"model response incomplete: {reason}; no tool from this response was executed"
+            )
+        if response.error is not None:
+            raise HarnessError(
+                f"model response failed: {response.error.code}: {response.error.message}"
+            )
+        raise HarnessError(f"model response ended with status {response.status}")
 
     def _run_tool(self, tool_call) -> str:
         """Run one requested tool, converting any failure into tool output."""
@@ -116,11 +127,15 @@ class Agent:
                 }:
                     self.emit({"type": "text", "text": event.delta})
                     text_started = True
-                elif event.type == "response.completed":
+                elif event.type in {
+                    "response.completed",
+                    "response.incomplete",
+                    "response.failed",
+                }:
                     final_response = event.response
 
         if final_response is None:
-            raise RuntimeError("model stream ended without a terminal response")
+            raise HarnessError("model stream ended without a terminal response")
         return final_response, text_started
 
     def handle_message(self, said: str) -> None:
@@ -142,6 +157,7 @@ class Agent:
             if response.usage is not None:
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
+            self._require_complete(response)
             turn_items.extend(
                 item.model_dump(mode="json", exclude_none=True)
                 for item in response.output
@@ -160,7 +176,7 @@ class Agent:
                     self.emit({"type": "text", "text": response.output_text})
                 break
             if force_answer:
-                raise RuntimeError("model requested a tool after tool use was disabled")
+                raise HarnessError("model requested a tool after tool use was disabled")
 
             self.emit({"type": "tool", "name": tool_call.name, "arguments": tool_call.arguments})
             if tool_calls >= TOOL_CALL_LIMIT:
@@ -245,7 +261,6 @@ def main() -> None:
 
     terminal = Terminal()
     agent = Agent(OpenAI(), emit=terminal.emit)
-    print("[workspace: series-1-agent-class/05-files/agent_workspace]")
     print("Ctrl-D to leave. Ctrl-C interrupts the active turn.\n")
 
     while True:
@@ -262,6 +277,8 @@ def main() -> None:
         except KeyboardInterrupt:
             print("\n[turn interrupted]")
             break
+        except HarnessError as error:
+            print(f"harness failed: {error}", file=sys.stderr)
         except Exception as error:
             print(f"call failed: {error}", file=sys.stderr)
 
