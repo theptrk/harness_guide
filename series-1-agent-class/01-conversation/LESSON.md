@@ -1,26 +1,33 @@
 # Level 1 — Hold a conversation
 
-Level 0 sends one message and exits. A model does not remember that call. Level
-1 keeps the API items in a Python list and sends the full list on every call.
+## What broke
 
-Run it:
+Level 0 sends one question and exits. A second call does not include the first
+question or answer, so the model cannot refer to that exchange.
+
+Level 1 keeps one process running. The agent holds completed Responses API
+items in memory and sends them with each new user item.
+
+## Run it
 
 ```sh
 uv run --env-file .env series-1-agent-class/01-conversation/main.py
 ```
 
-Try:
+Enter two messages in the same process:
 
 ```text
 📝 you › My name is Ada.
+🤖 model › Nice to meet you, Ada.
+
 📝 you › What is my name?
+🤖 model › Your name is Ada.
 ```
 
-The second answer can use the name because the harness sends both exchanges to
-the model. Nothing is loaded from or written to disk. Exiting the process ends
-the conversation.
+The wording may differ. The second answer can use the name because its request
+contains the first user item and the model's first output items.
 
-## The item list
+## Keep the API items
 
 `Agent` owns the conversation:
 
@@ -28,13 +35,13 @@ the conversation.
 self.input_items = []
 ```
 
-For a new message, it creates one user item:
+Each message starts as a Responses API user item:
 
 ```python
 user_item = {"role": "user", "content": said}
 ```
 
-The API receives the completed items followed by the new user item:
+The request sends completed items followed by that new item:
 
 ```python
 response = self.client.responses.create(
@@ -45,12 +52,8 @@ response = self.client.responses.create(
 )
 ```
 
-The `+` creates a temporary list. The new request is not committed to the
-conversation until the call succeeds.
-
-## Retain the completed exchange
-
-After a successful response, the agent adds the request and every output item:
+After the call succeeds, the agent retains the user item and every item in
+`response.output`:
 
 ```python
 self.input_items.append(user_item)
@@ -61,28 +64,31 @@ self.input_items.extend(
 ```
 
 `response.output` contains SDK objects. `model_dump()` turns each object into a
-dictionary that can be sent back through `input` on the next call.
+dictionary accepted by `input` on the next call. The agent retains the API
+items, including fields such as message `phase`; it does not rebuild history
+from `response.output_text` or terminal text.
 
-The code retains API items rather than rebuilding a transcript from displayed
-text. Later levels add function calls and function results to this same list.
+The `+` in `self.input_items + [user_item]` creates a temporary request list.
+If the API call fails, the user item is not committed. A successful call
+commits the completed exchange.
 
-## Failure behavior
+`main()` adds the terminal `while True` loop. It prints the returned answer and
+usage. `Agent` still does not read input or print output.
 
-If the API call fails or is interrupted, the user item has not been appended.
-The next message therefore cannot include a request that never received a
-completed response.
+Every request sends the full in-memory item list, so input token usage grows
+with the conversation.
 
-## Context grows
+## Done when
 
-Every new call sends the whole list. Input token usage grows with the
-conversation. A production harness eventually needs a context-selection policy,
-but that is separate from learning the basic conversation mechanism.
+1. Tell the agent two facts in one process.
+2. Ask it to repeat both facts.
+3. Run with `--raw` and confirm that each response contains API output items.
+4. Confirm that later input-token counts are larger as the item list grows.
+5. Exit, restart, and confirm that the new process does not know the facts.
 
-## Check it yourself
+## What breaks next
 
-1. Tell the agent two facts, then ask it to repeat them.
-2. Exit and start the program again. Confirm that it no longer knows them.
-3. Temporarily print `self.input_items` after a successful call and inspect the
-   user and assistant items.
+Ask for the exact current time in Tokyo. The model has no live clock and the
+harness cannot run a function to get one.
 
-Next, [Level 2](../02-tool/LESSON.md) adds one function tool.
+[Level 2](../02-tool/LESSON.md) adds one function tool.

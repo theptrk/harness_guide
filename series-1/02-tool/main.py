@@ -84,6 +84,7 @@ def main() -> None:
         )
         input_items = history.get_input_items(chat_file_path)
         only_user_item_written = True
+        next_tool_call = None
 
         try:
             response = client.responses.create(
@@ -111,15 +112,22 @@ def main() -> None:
             )
 
             if tool_call is not None:
-                arguments = json.loads(tool_call.arguments)
                 print(f"\ntool › {tool_call.name}({tool_call.arguments})")
+                failure = None
+                try:
+                    arguments = json.loads(tool_call.arguments)
+                    tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+                    if tool_function is None:
+                        raise LookupError(f"unknown tool: {tool_call.name}")
+                    tool_result = tool_function(**arguments)
+                except Exception as error:
+                    failure = error
+                    tool_result = f"{type(error).__name__}: {error}"
 
-                tool_function = TOOL_FUNCTIONS.get(tool_call.name)
-                if tool_function is None:
-                    raise RuntimeError(f"unknown tool: {tool_call.name}")
-                tool_result = tool_function(**arguments)
-                print(f"tool ‹ {tool_result}")
-
+                # The function_call is already on disk. The API rejects input
+                # that holds a call with no matching output, so the output is
+                # written even when the tool failed and this turn is about to
+                # end.
                 history.append_item(
                     chat_file_path,
                     {
@@ -128,6 +136,10 @@ def main() -> None:
                         "output": tool_result,
                     },
                 )
+                if failure is not None:
+                    raise failure
+                print(f"tool ‹ {tool_result}")
+
                 input_items = history.get_input_items(chat_file_path)
 
                 response = client.responses.create(
@@ -146,6 +158,23 @@ def main() -> None:
                 model_calls += 1
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
+
+                # This level runs one tool call per turn. If the model asked
+                # for a second one, that call is already on disk and will not
+                # be run, so record why instead of leaving it unanswered.
+                next_tool_call = next(
+                    (item for item in response.output if item.type == "function_call"),
+                    None,
+                )
+                if next_tool_call is not None:
+                    history.append_item(
+                        chat_file_path,
+                        {
+                            "type": "function_call_output",
+                            "call_id": next_tool_call.call_id,
+                            "output": "not run: this level handles one tool call per turn",
+                        },
+                    )
         except KeyboardInterrupt:
             if only_user_item_written:
                 history.drop_last_item(chat_file_path)
@@ -159,10 +188,6 @@ def main() -> None:
 
         answer = response.output_text
         if not answer:
-            next_tool_call = next(
-                (item for item in response.output if item.type == "function_call"),
-                None,
-            )
             if next_tool_call is not None:
                 print(f"\n[stopped: model requested another {next_tool_call.name} call]")
             else:

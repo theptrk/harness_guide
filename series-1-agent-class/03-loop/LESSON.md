@@ -1,27 +1,51 @@
 # Level 3 — Build the agent loop
 
-Level 2 handles one tool request with a fixed sequence. A request for several
-timezones may require several model and tool calls. Level 3 puts the same model
-call, response inspection, and tool execution inside `while True`:
+## What broke
+
+Level 2 handles one tool request with a fixed sequence. The terminal input loop
+is already in place and stays unchanged. A request for several timezones may
+require several model and tool calls. Level 2 raises an error when the second
+model response requests another tool.
+
+Level 3 adds a second `while True` inside `Agent.handle_message()`. It repeats:
 
 1. Call the model with the conversation and active turn.
 2. Add the complete response items to the active turn.
 3. If the response requests a tool, run it and add its result.
 4. Repeat; stop when there is no function call.
 
+## Run it
+
 ```sh
 uv run --env-file .env series-1-agent-class/03-loop/main.py
 ```
 
-Try asking for the current time in Tokyo, New York, and London.
+Ask:
+
+```text
+📝 you › Call get_current_time separately for Tokyo, New York, and London, then summarize.
+
+tool › get_current_time({"timezone":"Asia/Tokyo"})
+tool ‹ { ... }
+tool › get_current_time({"timezone":"America/New_York"})
+tool ‹ { ... }
+tool › get_current_time({"timezone":"Europe/London"})
+tool ‹ { ... }
+
+🤖 model › ...
+    [4 model call(s) · 3 tool call(s) · ...]
+```
+
+The timestamps, answer, and token counts will differ. Each requested tool call
+should have a result before the final answer.
 
 ## Two loops
 
-`main()` owns the terminal session. It creates one `Agent`, reads messages, and
-stops at `Ctrl-D`:
+`main()` owns the terminal session. It creates one `Agent` with a function
+that prints events, reads messages, and stops at `Ctrl-D`:
 
 ```python
-agent = Agent()
+agent = Agent(OpenAI(), emit=print_event)
 
 while True:
     said = input("📝 you › ").strip()
@@ -98,13 +122,63 @@ conversation:
 self.input_items.extend(turn_items)
 ```
 
-That is the central new mechanism: Level 2 raises an error when the second
-model response requests another tool; Level 3 lets that request start another
-iteration.
+Level 2 raises an error when the second response requests another tool. Level 3
+lets that request start another iteration.
 
-The loop allows up to five tool executions. If the model requests a sixth, the
-harness returns a `ToolCallLimit` result and disables tools for the final model
-call. This keeps a mistaken model from looping forever while still letting it
-explain why it stopped. Level 3 still assumes working tools; later levels harden
-tool execution. [Level 4](../04-stream/LESSON.md) first streams the model's
-answer.
+## Bound the loop
+
+An unbounded agent loop may keep requesting tools. `TOOL_CALL_LIMIT` sets the
+maximum number of Python tool executions in one turn:
+
+```python
+TOOL_CALL_LIMIT = 5
+```
+
+After five tools execute, the next function request is not executed. The
+harness still appends a matching result:
+
+```python
+if tool_calls >= TOOL_CALL_LIMIT:
+    tool_result = (
+        f"ToolCallLimit: the limit of {TOOL_CALL_LIMIT} "
+        "tool calls has been reached"
+    )
+    force_answer = True
+```
+
+`force_answer` records that the next model call must finish without another
+tool. That call sets:
+
+```python
+tool_choice="none" if force_answer else "auto"
+```
+
+`tool_choice="none"` disables function calls for that request. The model
+receives the `ToolCallLimit` result and must answer from the items already in
+the turn. The `done` event counts five executed tool calls; the rejected sixth
+request was not executed.
+
+## Done when
+
+1. Ask a question that needs no tool. Confirm the agent exits its inner loop
+   after one model call.
+2. Ask for separate time lookups in three timezones. Confirm three
+   `tool`/`tool_result` pairs precede one answer.
+3. Ask for separate lookups in six timezones. Confirm only five tools execute,
+   the sixth result starts with `ToolCallLimit`, and the model then answers.
+4. Confirm the terminal remains available for another user message after each
+   completed agent loop.
+
+## What breaks next
+
+Run Level 3 and ask:
+
+```text
+📝 you › Use get_current_time with Mars/Olympus. If it fails, explain why.
+```
+
+`ZoneInfo` raises before the harness can append a `function_call_output`. The
+model cannot inspect or explain the tool failure.
+
+[Level 4](../04-safe-loop/LESSON.md) validates model responses, converts tool
+exceptions into results, and commits only completed turns.

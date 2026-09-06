@@ -1,6 +1,6 @@
-"""Level 3 — keep calling tools until the model answers.
+"""Level 4 — make the agent loop safe.
 
-    uv run --env-file .env series-1-agent-class/03-loop/main.py
+    uv run --env-file .env series-1-agent-class/04-safe-loop/main.py
 """
 
 import json
@@ -55,28 +55,47 @@ TOOL_FUNCTIONS = {
 Emit = Callable[[dict], None]
 
 
-class Agent:
-    """One model client and one conversation.
+class HarnessError(RuntimeError):
+    """The model returned output the harness cannot safely continue from."""
 
-    The agent never prints. It reports each step of a turn by calling emit
-    with a dict whose "type" is one of: tool, tool_result, text, done.
-    """
+
+class Agent:
+    """One model client and one conversation."""
 
     def __init__(self, client: OpenAI, *, emit: Emit):
         self.client = client
         self.emit = emit
         self.input_items = []
 
+    @staticmethod
+    def _require_complete(response) -> None:
+        """Reject output that is unsafe to execute or retain."""
+        if response.status == "completed":
+            return
+        if response.status == "incomplete":
+            reason = response.incomplete_details.reason if response.incomplete_details else "unknown"
+            raise HarnessError(
+                f"model response incomplete: {reason}; no tool from this response was executed"
+            )
+        if response.error is not None:
+            raise HarnessError(
+                f"model response failed: {response.error.code}: {response.error.message}"
+            )
+        raise HarnessError(f"model response ended with status {response.status}")
+
     def _run_tool(self, tool_call) -> str:
-        """Execute one function_call item returned by the model."""
-        arguments = json.loads(tool_call.arguments)
-        tool_function = TOOL_FUNCTIONS.get(tool_call.name)
-        if tool_function is None:
-            raise RuntimeError(f"unknown tool: {tool_call.name}")
-        return tool_function(**arguments)
+        """Run one requested tool, converting any failure into tool output."""
+        try:
+            arguments = json.loads(tool_call.arguments)
+            tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+            if tool_function is None:
+                raise LookupError(f"unknown tool: {tool_call.name}")
+            return tool_function(**arguments)
+        except Exception as error:
+            return f"{type(error).__name__}: {error}"
 
     def handle_message(self, said: str) -> None:
-        """Run one user request until the model returns an answer."""
+        """Run one user request until the model returns a complete answer."""
         turn_items = [{"role": "user", "content": said}]
         answer = None
         model_calls = 0
@@ -95,28 +114,28 @@ class Agent:
                 parallel_tool_calls=False,
                 reasoning={"effort": "none"},
             )
-            turn_items.extend(
-                item.model_dump(mode="json", exclude_none=True)
-                for item in response.output
-            )
             model_calls += 1
             if response.usage is not None:
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
 
-            # response.output may contain messages, function calls, or other
-            # item types. Find the function call relevant to this lesson.
+            # Validate the terminal response before retaining or executing it.
+            self._require_complete(response)
+            turn_items.extend(
+                item.model_dump(mode="json", exclude_none=True)
+                for item in response.output
+            )
+
             tool_call = next(
                 (item for item in response.output if item.type == "function_call"),
                 None,
             )
 
             if tool_call is None:
-                # No tool request means the model has finished this turn.
                 answer = response.output_text
                 break
             if force_answer:
-                raise RuntimeError("model requested a tool after tool use was disabled")
+                raise HarnessError("model requested a tool after tool use was disabled")
 
             self.emit({"type": "tool", "name": tool_call.name, "arguments": tool_call.arguments})
             if tool_calls >= TOOL_CALL_LIMIT:
@@ -139,8 +158,9 @@ class Agent:
             )
 
         if not answer:
-            raise RuntimeError("model returned no answer")
+            raise HarnessError("completed model response contained no answer")
 
+        # Only a completed turn becomes conversation history.
         self.input_items.extend(turn_items)
 
         self.emit({"type": "text", "text": answer})
@@ -201,6 +221,8 @@ def main() -> None:
         except KeyboardInterrupt:
             print()
             break
+        except HarnessError as error:
+            print(f"harness failed: {error}", file=sys.stderr)
         except Exception as error:
             print(f"call failed: {error}", file=sys.stderr)
 

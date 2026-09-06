@@ -95,13 +95,20 @@ def run_turn(client, chat_file_path, said: str) -> None:
                 break
 
             print(f"\ntool › {tool_call.name}({tool_call.arguments})")
-            arguments = json.loads(tool_call.arguments)
-            tool_function = TOOL_FUNCTIONS.get(tool_call.name)
-            if tool_function is None:
-                raise RuntimeError(f"unknown tool: {tool_call.name}")
-            tool_result = tool_function(**arguments)
-            print(f"tool ‹ {tool_result}")
+            failure = None
+            try:
+                arguments = json.loads(tool_call.arguments)
+                tool_function = TOOL_FUNCTIONS.get(tool_call.name)
+                if tool_function is None:
+                    raise LookupError(f"unknown tool: {tool_call.name}")
+                tool_result = tool_function(**arguments)
+            except Exception as error:
+                failure = error
+                tool_result = f"{type(error).__name__}: {error}"
 
+            # The function_call is already on disk. The API rejects input that
+            # holds a call with no matching output, so the output is written
+            # even when the tool failed and this turn is about to end.
             history.append_item(
                 chat_file_path,
                 {
@@ -110,6 +117,9 @@ def run_turn(client, chat_file_path, said: str) -> None:
                     "output": tool_result,
                 },
             )
+            if failure is not None:
+                raise failure
+            print(f"tool ‹ {tool_result}")
     except KeyboardInterrupt:
         if only_user_item_written:
             history.drop_last_item(chat_file_path)

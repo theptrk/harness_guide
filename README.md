@@ -2,9 +2,10 @@
 
 Building an AI agent harness from first principles, one level at a time.
 
-[**Series 1 — Build an Agent Harness**](roadmap.md) is the implemented
-introduction. Levels 0–8 build a model call into a local agent with persistence,
-tools, an agent loop, files, shell commands, and a browser.
+[**Series 1 — Build an Agent Harness**](series-1-agent-class/README.md) is the
+implemented introduction and the default path. Its 11 levels build a model call
+into a local agent with conversation state, tools, streaming, files, shell
+commands, a browser, persistence, and operational failure policy.
 
 **[DRAFT]** [**Series 2 — Advanced Agent Concepts**](roadmap-intermediate.md) plans the
 follow-on concepts: hosted tools, context selection, evaluation, model
@@ -15,26 +16,30 @@ assistants, and provider adapters.
 sandboxing, durable computers, background work, identity, secrets, concurrency,
 browser security, observability, quotas, deployment, and recovery.
 
-The Series 1 lessons are the guide. Start here:
+Start Series 1 here:
 
-| Level | | |
+| Level | Lesson | Adds |
 |---|---|---|
-| 0 | [Call a model](series-1/00-model/LESSON.md) | one file, one dependency |
-| 1 | [Hold a conversation](series-1/01-conversation/LESSON.md) | …because it forgot your name |
-| 2 | [Give it one tool](series-1/02-tool/LESSON.md) | …because it has no clock |
-| 3 | [Build the agent loop](series-1/03-loop/LESSON.md) | …because one tool call was not enough |
-| 4 | [Harden the loop](series-1/04-harden/LESSON.md) | …because tools and model calls fail |
-| 5 | [Stream it](series-1/05-stream/LESSON.md) | …because the terminal stays blank while the model works |
-| 6 | [Give it files](series-1/06-files/LESSON.md) | …because answer text cannot change a file |
-| 7 | [Run a command](series-1/07-shell/LESSON.md) | …because it cannot run the code it writes |
-| 8 | [Use a browser](series-1/08-browser/LESSON.md) | …because browser work otherwise requires shell automation |
+| 00 | [Model](series-1-agent-class/00-model/LESSON.md) | one model call |
+| 01 | [Conversation](series-1-agent-class/01-conversation/LESSON.md) | in-memory conversation state |
+| 02 | [One tool](series-1-agent-class/02-tool/LESSON.md) | one function call and result |
+| 03 | [Loop](series-1-agent-class/03-loop/LESSON.md) | repeated model and tool calls |
+| 04 | [Safe loop](series-1-agent-class/04-safe-loop/LESSON.md) | response validation and bounded execution |
+| 05 | [Stream](series-1-agent-class/05-stream/LESSON.md) | incremental answer display |
+| 06 | [Files](series-1-agent-class/06-files/LESSON.md) | confined file tools |
+| 07 | [Shell](series-1-agent-class/07-shell/LESSON.md) | approved shell commands |
+| 08 | [Browser](series-1-agent-class/08-browser/LESSON.md) | browser tools |
+| 09 | [Persistence](series-1-agent-class/09-persistence/LESSON.md) | append-only conversation history |
+| 10 | [Operational policy](series-1-agent-class/10-operational/LESSON.md) | retries, timeouts, output bounds, and failure handling |
 
-[`series-1-agent-class/`](series-1-agent-class/README.md) contains the same
-levels with an `Agent` class owning the model client and selected chat.
+[`series-1/`](series-1/README.md) is the legacy function-based implementation.
+It is kept for reference and is not the default Series 1 path. Its README lists
+where the two differ.
 
 ## How to use this
 
-Clone the repo and work through the levels in order. **You are not writing these files from scratch** — the code is here, it runs, and each level is short enough to read top to bottom in one sitting.
+Clone the repo and work through the levels in order. The code is complete and
+each level can run independently.
 
 Your job at each level is:
 
@@ -58,7 +63,7 @@ cp .env.example .env                              # then put your key in it
 `uv` installs the Python dependencies on the first run:
 
 ```sh
-uv run --env-file .env series-1/00-model/main.py "why is the sky blue"
+uv run --env-file .env series-1-agent-class/00-model/main.py
 ```
 
 Alternatively, set `export UV_ENV_FILE=.env` once and you can drop the flag from every command.
@@ -71,12 +76,14 @@ uv run playwright install chromium
 
 ## How this is laid out
 
-Each level is a folder under `series-1/`. You can run any level without the
-ones after it. Adjacent folders are complete copies, so a diff is the code
-that level added:
+Each level is a folder under `series-1-agent-class/`. You can run any level
+without the ones before it. Adjacent folders are complete copies. Compare them
+to see the code added by the next level:
 
 ```sh
-diff -ru series-1/00-model series-1/01-conversation
+diff -ru -x chats -x agent_workspace \
+  series-1-agent-class/00-model \
+  series-1-agent-class/01-conversation
 ```
 
 Built and tested with Python 3.13, `openai` 3.2.0, and Playwright 1.62.0.

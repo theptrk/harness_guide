@@ -3,8 +3,9 @@
 This series builds a local AI agent from a single model call through a tool-using
 agent loop with files, shell commands, and a browser.
 
-All nine levels are implemented. Each level has a runnable folder under
-`series-1/` and a lesson that explains what changed from the previous level.
+All eleven levels are implemented. Each level has a runnable folder under
+`series-1-agent-class/` and a lesson that explains what changed from the
+previous level.
 
 The follow-on series are:
 
@@ -34,32 +35,34 @@ operational controls belong to the production series.
 
 ---
 
-## Part I — Build the loop
+## Part I — Build a safe loop
 
 ### 00 · Call a model
 
-Send one question and one set of instructions through the Responses API. Print
-the answer and inspect the raw response, served model, and token counts.
+Give an `Agent` one model client. Send one question and one set of instructions
+through the Responses API. The host prints the returned answer and usage.
 
 - **Learn** — API keys, model input, system instructions, SDK helpers, and raw
-  response structure.
+  response structure. The agent owns model behavior; the host owns terminal
+  behavior.
 - **Done when** — One command prints a model answer and usage data.
 
 ### 01 · Hold a conversation
 
-Write each user and assistant message to a JSONL chat file. Rebuild the complete
-input list from that file before every model call.
+Keep completed Responses API items in an in-memory list. Send that list followed
+by the new user item on each model call.
 
 - **Learn** — Models do not retain conversation state between calls. The
-  harness owns persistence and decides what history to send.
-- **Done when** — Restarting resumes the latest chat, while `--new` starts an
-  empty conversation.
+  agent owns the conversation input. Persistence is a separate concern.
+- **Done when** — The agent recalls an earlier message during one process and
+  forgets it after restart.
 
 ### 02 · Give it one tool
 
 Describe `get_current_time(timezone)` with a JSON schema. When the model returns
 a `function_call`, select the Python function by name, execute it, and send a
-`function_call_output` back.
+matching `function_call_output` back. Report turn steps to the host through
+`emit`.
 
 - **Learn** — The model requests an action; the harness decides whether and how
   to execute it.
@@ -68,30 +71,31 @@ a `function_call`, select the Python function by name, execute it, and send a
 
 ### 03 · Build the agent loop
 
-Put one user request in `run_turn()`. Repeat model calls and tool execution until
-the model returns an answer instead of another tool request.
+Put one user request in `Agent.handle_message()`. Repeat model calls and tool
+execution until the model returns an answer instead of another tool request.
+Bound the number of executed tools.
 
 - **Learn** — The CLI loop waits for user messages. The agent loop completes one
   user request.
 - **Done when** — One request triggers several sequential tool calls before the
   final answer.
 
-### 04 · Harden the loop
+### 04 · Make the loop safe
 
-Return tool exceptions as structured tool results, cap tool calls, configure API
-timeouts and retries, and reject incomplete model responses before executing
-their output.
+Reject incomplete model responses before executing their output. Return tool
+exceptions and exhausted tool budgets as matching tool results. Commit only a
+completed turn to conversation history.
 
 - **Learn** — Tool failures are data the model may correct. Harness failures stop
-  execution. A successful HTTP request may still contain an incomplete model
-  response.
+  the turn. A successful HTTP request may still contain an incomplete model
+  response that is unsafe to execute.
 - **Done when** — Invalid arguments become tool results, runaway tool use stops,
   and incomplete output is never executed.
 
 ### 05 · Stream it
 
 Print answer deltas as they arrive while preserving only the completed response
-item as later model input. Record turn IDs so interrupted turns are excluded.
+item as later model input. Discard interrupted turns.
 
 - **Learn** — Display events and canonical API input serve different purposes.
 - **Done when** — Text appears incrementally, and interrupting a turn does not
@@ -130,9 +134,33 @@ DOM content and interactive-element attributes into JSON tool results.
 
 - **Learn** — A live browser object cannot be sent to the model. The harness
   provides a smaller model-facing representation and explicit browser actions.
-- **Done when** — The agent searches Google for a fixed historical fact,
-  requests help if Google presents a CAPTCHA, resumes after you complete it, and
-  reports an answer with a source URL.
+- **Done when** — The agent opens a local page, reads its interactive elements,
+  clicks a button, and reports the resulting value.
+
+---
+
+## Part III — Persist and operate it
+
+### 09 · Persist conversations
+
+Replace the in-memory conversation list with an append-only JSONL file. The host
+selects the file; the agent reads and appends canonical API items.
+
+- **Learn** — Conversation input and durable storage are separate
+  representations with an explicit conversion.
+- **Done when** — Restarting resumes the latest chat, while `--new` starts an
+  empty conversation.
+
+### 10 · Add operational policy
+
+Configure SDK retries and request timeouts, allow an optional output limit,
+extract refusal content, and decide how the terminal exits after API or harness
+failures.
+
+- **Learn** — Protocol safety is required for correct tool execution.
+  Operational policy decides how a particular host handles service failures.
+- **Done when** — Normal requests still work, refusals are displayed, and
+  incomplete output caused by a low output limit exits without executing it.
 
 ---
 
@@ -149,4 +177,4 @@ execution, or real operational risk.
 
 ---
 
-*Series 1 complete · Levels 0–8 built*
+*Series 1 complete · Levels 0–10 built*
