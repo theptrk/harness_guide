@@ -90,6 +90,11 @@ class Agent:
         )
 ```
 
+`input` is an argument to `responses.create`. On this call it is a string: the
+question. The same argument also accepts a list of dictionaries. That list is
+the conversation. Level 1 sends it. Each dictionary is one item: a user line,
+a model message, a function call, a function result, or a reasoning item.
+
 `main()` reads the optional `--raw` flag, prompts for the question, creates
 `Agent(OpenAI())`, and calls `agent.handle_message(question)`. It does not make
 the model request. The
@@ -165,6 +170,11 @@ reasoning effort is `medium`. The sample shows `0` reasoning tokens because
 - `message`. Assistant text. Fields include `role`, `content`, `status`, and `phase`. A turn can return more than one assistant message. `phase` marks each one as `commentary` (a mid-turn update, such as what it will do next) or `final_answer` (the answer for this turn). When you put that message on a later `input` list, you send `phase` with it.
 - `function_call`. The model wants a function run. Fields include `name`, `arguments`, and `call_id`.
 - `function_call_output`. Your function result. Same `call_id`, plus `output`. This type is something you put on `input`. It does not arrive in `output`.
+- `reasoning`. The model's thinking. Fields include `id`. On OpenAI the think
+  tokens are not in this dictionary as text. You keep the item and send it on
+  a later `input` list so the model can continue that thinking. This call sets
+  effort to `none`, so `output` has no reasoning item and `reasoning_tokens`
+  is `0`.
 
 `input` on this call is a string. The same argument also accepts a list of those items. Later levels send the list. They do not invent a second conversation format.
 
@@ -221,7 +231,7 @@ you might commit.
 
 **You send two pieces of text, and they have different jobs.** `instructions`
 is the system prompt — it applies to every question you'll ever ask. `input` is
-this one question. The evaluation chapter in
+this one question. Later it is the conversation list. The evaluation chapter in
 [Advanced Agent Concepts](../../roadmap-intermediate.md) changes the first one
 and measures what happens.
 

@@ -68,6 +68,22 @@ dictionary accepted by `input` on the next call. The agent retains the API
 items, including fields such as message `phase`; it does not rebuild history
 from `response.output_text` or terminal text.
 
+After the Ada exchange, `self.input_items` is that list of dictionaries:
+
+```python
+[
+  {"role": "user", "content": "My name is Ada."},
+  {
+    "type": "message",
+    "role": "assistant",
+    "content": [{"type": "output_text", "text": "Nice to meet you, Ada."}],
+  },
+]
+```
+
+The next `responses.create` sends that list plus the new user item as `input=`.
+The wording of the assistant text will differ. The shape will not.
+
 The `+` in `self.input_items + [user_item]` creates a temporary request list.
 If the API call fails, the user item is not committed. A successful call
 commits the completed exchange.

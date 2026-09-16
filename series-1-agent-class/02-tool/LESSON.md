@@ -156,9 +156,38 @@ Only after both checks pass is the completed turn committed:
 self.input_items.extend(turn_items)
 ```
 
-A completed round trip contains the user item, function call, function result,
-and final model message. All four stay in memory and become input to the next
-user message.
+A completed round trip is one list of dictionaries. After Tokyo, `turn_items`
+looks like this:
+
+```python
+[
+  {"role": "user", "content": "Use get_current_time to tell me the current time in Tokyo."},
+  {"type": "reasoning", "id": "rs_..."},
+  {
+    "type": "function_call",
+    "call_id": "call_...",
+    "name": "get_current_time",
+    "arguments": '{"timezone":"Asia/Tokyo"}',
+  },
+  {
+    "type": "function_call_output",
+    "call_id": "call_...",
+    "output": '{"timezone":"Asia/Tokyo","datetime":"..."}',
+  },
+  {
+    "type": "message",
+    "role": "assistant",
+    "content": [{"type": "output_text", "text": "The current time in Tokyo is ..."}],
+  },
+]
+```
+
+The `reasoning` row is the thinking. On OpenAI it is a handle: an `id`, not the
+think tokens as text. `model_dump()` of `response.output` keeps that item
+because it copies every output item. You do not store it somewhere else. You
+leave it in the list and send the list as `input=` on the next
+`responses.create`. Effort is `none` in this lesson, so that row may be absent.
+When effort is not `none`, it sits between the user item and the function call.
 
 ## Done when
 
